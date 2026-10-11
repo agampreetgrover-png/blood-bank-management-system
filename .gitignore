@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Secrets - copy server/.env.example to server/.env instead
+.env
+
+# Build output
+client/dist/
+
+# Logs and editor files
+*.log
+.vscode/
+.idea/
+.DS_Store

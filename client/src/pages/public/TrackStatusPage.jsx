@@ -1,0 +1,112 @@
+import { useState, useEffect } from 'react';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
+import api from '../../services/api';
+import { useUserAuth } from '../../hooks/useUserAuth';
+import { useToast } from '../../context/ToastContext';
+
+const formatDate = (value) => (value
+  ? new Date(value).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  : '');
+const pillClass = (status) => `status-pill pill-${String(status).toLowerCase().replace(' ', '-')}`;
+
+// Shows only the logged-in user's own requests and bookings. The server filters by
+// account, so there is no way to look up someone else's record from here.
+function TrackStatusPage() {
+  const { isLoggedIn, loading: authLoading, logout } = useUserAuth();
+  const { showToast } = useToast();
+  const navigate = useNavigate();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    api.get('/users/me')
+      .then((res) => setData(res.data))
+      .catch((err) => {
+        if (err.response?.status === 401) {
+          logout();
+          showToast('Your session has expired. Log in again to see your requests.', 'info');
+          navigate('/login', { state: { from: '/track' } });
+        } else {
+          setError('Your requests could not be loaded. Refresh the page to try again.');
+        }
+      });
+  }, [isLoggedIn]);
+
+  if (authLoading) return null;
+  if (!isLoggedIn) return <Navigate to="/login" state={{ from: '/track' }} replace />;
+
+  const donor = data?.donor;
+
+  return (
+    <div className="pub-container pub-page pub-narrow">
+      <div className="pub-page-header">
+        <h1>Your requests and bookings</h1>
+        <p>Everything you&apos;ve sent us from this account, with its current status.</p>
+      </div>
+
+      {error && <div className="alert alert-error" role="alert"><span>{error}</span></div>}
+      {!data && !error && <p className="pub-muted">Loading…</p>}
+
+      {data && (
+        <>
+          <section className="track-section">
+            <h2 className="section-title">Blood requests</h2>
+            {data.requests.length === 0 ? (
+              <p className="pub-muted">
+                No blood requests yet. <Link to="/request-blood">Request blood</Link>
+              </p>
+            ) : (
+              <ul className="track-list">
+                {data.requests.map((r) => (
+                  <li key={r.id} className="track-item">
+                    <div>
+                      <strong>REQ-{r.id}</strong>
+                      <span className="track-meta">
+                        {r.patient_name}, {r.blood_group}, {r.units_required} {r.units_required === 1 ? 'unit' : 'units'}
+                      </span>
+                      <span className="track-meta">{r.hospital}. Needed by {formatDate(r.request_date)}</span>
+                    </div>
+                    <span className={pillClass(r.status)}>{r.status}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="track-section">
+            <h2 className="section-title">Donation bookings</h2>
+            {data.donations.length === 0 ? (
+              <p className="pub-muted">
+                No bookings yet. <Link to="/donate">Book a donation</Link>
+              </p>
+            ) : (
+              <ul className="track-list">
+                {data.donations.map((d) => (
+                  <li key={d.id} className="track-item">
+                    <div>
+                      <strong>DON-APPT-{d.id}</strong>
+                      <span className="track-meta">{formatDate(d.donation_date)}, {d.blood_group}</span>
+                    </div>
+                    <span className={pillClass(d.status)}>{d.status}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {donor && (
+              <p className="pub-muted track-donor">
+                {!donor.is_active
+                  ? 'Your donor profile is inactive. Call the blood bank if this is a mistake.'
+                  : donor.is_eligible
+                    ? `You're on our donor list${donor.last_donation_date ? `. Last donation: ${formatDate(donor.last_donation_date)}` : ''}.`
+                    : 'Your donor profile is marked not eligible right now. Staff will tell you when you can donate again.'}
+              </p>
+            )}
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
+export default TrackStatusPage;

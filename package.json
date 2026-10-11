@@ -1,0 +1,23 @@
+{
+  "name": "blood-bank-management-system",
+  "version": "1.0.0",
+  "description": "University DBMS Project - Blood Bank Management System",
+  "scripts": {
+    "start:server": "npm --prefix server start",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "build:client": "npm --prefix client run build",
+    "setup:db": "npm --prefix server run setup-db",
+    "seed": "npm --prefix server run seed"
+  },
+  "keywords": [
+    "blood-bank",
+    "dbms",
+    "mysql",
+    "express",
+    "react",
+    "vite"
+  ],
+  "author": "Student Project Team",
+  "license": "ISC"
+}

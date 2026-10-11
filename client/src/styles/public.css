@@ -1,0 +1,626 @@
+/* Public website, layered on top of index.css and scoped to .pub-shell.
+   Matches the login page: flat, square, compact type, controls straight from index.css.
+   Colour only where it carries meaning (red for actions and shortages, green/amber on stock). */
+
+.pub-shell {
+  --primary: #991b1b;
+  --primary-hover: #7f1d1d;
+  --primary-light: #fef2f2;
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --border: #e2e8f0;
+  --border-light: #f1f5f9;
+  --field-border: #e2e8f0;
+  --focus: #64748b;
+  --ok: #166534;
+  --low: #a35f00;
+
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.pub-shell :focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.pub-container {
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
+.pub-main {
+  flex: 1;
+}
+
+.pub-muted {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.pub-muted a,
+.pub-appeal a,
+.pub-auth-switch a {
+  color: var(--primary);
+  font-weight: 600;
+  text-underline-offset: 3px;
+}
+
+.pub-nowrap {
+  white-space: nowrap;
+}
+
+.pub-lead {
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+/* ---------- Shared controls ---------- */
+/* Buttons, inputs, alerts, tables and badges use the login page's styles from index.css. */
+
+.pub-shell textarea.form-control {
+  height: auto;
+  resize: vertical;
+}
+
+.pub-shell .form-row {
+  gap: 12px;
+}
+
+/* ---------- Pages ---------- */
+
+.pub-page {
+  padding-top: 40px;
+  padding-bottom: 64px;
+}
+
+.pub-narrow {
+  max-width: 760px;
+}
+
+.pub-stock h1,
+.pub-page-header h1,
+.public-heading-section h1 {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.3px;
+  margin-bottom: 4px;
+}
+
+.pub-page-header,
+.public-heading-section {
+  margin-bottom: 14px;
+}
+
+.pub-page-header p,
+.public-heading-section p {
+  color: var(--text-muted);
+  max-width: 64ch;
+}
+
+/* ---------- Stock ---------- */
+
+.pub-tag-row {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 14px 16px;
+  margin-top: 14px;
+}
+
+.bt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+}
+
+.bt-group {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.5px;
+}
+
+.bt-units {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+
+button.bt {
+  cursor: pointer;
+}
+
+
+.bt-selected .bt-group,
+button.bt:hover .bt-group {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 5px;
+}
+
+.pub-appeal {
+  margin-top: 24px;
+}
+
+.pub-appeal::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+  vertical-align: 1px;
+}
+
+.pub-compat-box {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.pub-compat-box h2 {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pub-compat-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px 24px;
+}
+
+.pub-compat-list .bt {
+  width: 72px;
+}
+
+.pub-compat-list .bt-group {
+  font-size: 20px;
+}
+
+/* ---------- Home: two paths ---------- */
+
+.pub-paths {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  margin-top: 32px;
+}
+
+.pub-path-icon {
+  color: var(--primary);
+  margin-bottom: 12px;
+}
+
+.pub-path h2 {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.pub-path p {
+  color: var(--text-muted);
+  max-width: 42ch;
+  margin-bottom: 16px;
+}
+
+/* ---------- Track ---------- */
+
+.track-section + .track-section {
+  margin-top: 20px;
+}
+
+.track-list {
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.track-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.track-item strong {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+
+.track-meta {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.track-donor {
+  margin-top: 16px;
+}
+
+/* ---------- Donation + request forms ---------- */
+
+.eligibility-banner {
+  margin-bottom: 28px;
+  color: var(--text-muted);
+}
+
+.eligibility-title {
+  color: var(--text);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.eligibility-items {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 32px;
+  padding-left: 20px;
+  font-size: 13.5px;
+}
+
+.form-section {
+  margin-bottom: 28px;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.form-row-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.field-hint {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.pub-shell .form-group .checkbox-label {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-weight: 400;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.checkbox-label input {
+  margin-top: 4px;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  flex-shrink: 0;
+}
+
+.form-actions-bar {
+  display: flex;
+}
+
+/* ---------- Confirmation + track result ---------- */
+
+.confirmation-card {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.confirmation-badge {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ok);
+  margin-bottom: 4px;
+}
+
+.confirmation-header h2 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.confirmation-subtitle {
+  color: var(--text-muted);
+  margin-top: 4px;
+  max-width: 60ch;
+}
+
+.appointment-receipt {
+  border-top: 1px solid var(--border);
+}
+
+.receipt-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+}
+
+.receipt-label {
+  color: var(--text-muted);
+}
+
+.receipt-val {
+  text-align: right;
+}
+
+.pub-shell .reference-val {
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: var(--text);
+}
+
+.guidelines-card h3 {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.guidelines-card ul {
+  padding-left: 20px;
+  color: var(--text-muted);
+}
+
+.guidelines-card li {
+  margin-bottom: 4px;
+}
+
+.confirmation-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.status-pill {
+  font-weight: 500;
+}
+
+.pill-fulfilled,
+.pill-completed,
+.pill-registered,
+.pill-approved { color: var(--ok); }
+.pill-pending { color: var(--low); }
+.pill-rejected,
+.pill-not-eligible,
+.pill-inactive { color: var(--primary); }
+
+/* ---------- Accounts ---------- */
+
+.pub-auth-card {
+  max-width: 360px;
+  margin: 0 auto;
+}
+
+.pub-auth-wide {
+  max-width: 500px;
+}
+
+.pub-auth-header {
+  margin-bottom: 20px;
+}
+
+.pub-auth-header h1 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  line-height: 1.2;
+  margin-bottom: 4px;
+}
+
+.pub-auth-header p {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.pub-shell .pub-auth-card .btn-submit {
+  display: flex;
+  width: 100%;
+  margin: 4px 0 0;
+  padding: 6px;
+  font-size: 13px;
+}
+
+.pub-auth-switch {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.pub-account-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.pub-account-grid {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 40px;
+  align-items: start;
+}
+
+.pub-account-grid .card + .card {
+  margin-top: 20px;
+}
+
+.pub-account-profile h3 {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.pub-account-profile dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  font-size: 13.5px;
+  margin-bottom: 16px;
+}
+
+.pub-account-profile dt {
+  color: var(--text-muted);
+}
+
+.pub-account-profile dd {
+  word-break: break-word;
+}
+
+.pub-account-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---------- Admin header: link back to the public site ---------- */
+
+.donor-portal-quick-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.donor-portal-quick-link:hover {
+  text-decoration: underline;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 900px) {
+  .pub-tag-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .pub-account-grid {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+}
+
+@media (max-width: 680px) {
+  .pub-container {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .pub-page {
+    padding-top: 28px;
+    padding-bottom: 48px;
+  }
+
+  .pub-tag-row {
+    gap: 20px 16px;
+  }
+
+  .bt-group {
+    font-size: 22px;
+  }
+
+  .pub-paths {
+    grid-template-columns: 1fr;
+    gap: 36px;
+    margin-top: 48px;
+  }
+
+  .pub-shell .form-row,
+  .form-row-3,
+  .eligibility-items,
+
+  .pub-account-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .pub-shell .form-actions-bar .btn {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pub-shell * {
+    transition: none !important;
+  }
+}
+
+/* Printing a confirmation page gives a clean slip */
+@media print {
+  .pub-shell .top-navbar,
+  .confirmation-actions {
+    display: none;
+  }
+}
+
+/* ---------- Blood stock page ---------- */
+
+.stock-summary {
+  font-size: 14px;
+  max-width: 62ch;
+  margin-bottom: 14px;
+}
+
+.stock-summary a {
+  color: var(--primary);
+  font-weight: 600;
+  text-underline-offset: 3px;
+}
+
+.stock-row {
+  cursor: pointer;
+}
+
+.stock-pick {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  cursor: pointer;
+}
+
+.stock-status {
+  font-weight: 500;
+}
+
+.stock-low .stock-status { color: var(--low); }
+.stock-out .stock-status { color: var(--primary); }
+
