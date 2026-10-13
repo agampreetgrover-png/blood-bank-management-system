@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback } from 'react';
-import { Check, X, WarningCircle, Info } from '@phosphor-icons/react';
+import { X } from '@phosphor-icons/react';
 
 const ToastContext = createContext(null);
 
@@ -27,13 +27,7 @@ export function ToastProvider({ children }) {
       <div className="toast-container" aria-live="polite">
         {toasts.map((toast) => (
           <div key={toast.id} className={`toast toast-${toast.type}`}>
-            <span className="toast-icon">
-              {toast.type === 'success' && <Check size={15} weight="bold" />}
-              {toast.type === 'error' && <X size={15} weight="bold" />}
-              {toast.type === 'warning' && <WarningCircle size={15} weight="bold" />}
-              {toast.type === 'info' && <Info size={15} weight="bold" />}
-            </span>
-            <span className="toast-message">{toast.message}</span>
+            <span>{toast.message}</span>
             <button
               type="button"
               className="toast-close"

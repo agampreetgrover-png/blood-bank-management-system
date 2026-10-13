@@ -1,5 +1,10 @@
 const { pool } = require('../config/db');
 
+const URGENCIES = ['Normal', 'Urgent', 'Critical'];
+// 'Fulfilled' is only set by issuing blood (POST /api/issues), so stock always matches what was given out
+const EDITABLE_STATUSES = ['Pending', 'Approved', 'Rejected'];
+const validUnits = (units) => Number.isInteger(Number(units)) && units >= 1 && units <= 10;
+
 // GET /api/requests
 async function getAllRequests(req, res) {
   try {
@@ -90,8 +95,12 @@ async function createRequest(req, res) {
       return res.status(400).json({ message: 'Patient, blood group, units, hospital, and request date are required.' });
     }
 
-    if (units_required < 1 || units_required > 10) {
+    if (!validUnits(units_required)) {
       return res.status(400).json({ message: 'Units required must be between 1 and 10.' });
+    }
+
+    if (urgency && !URGENCIES.includes(urgency)) {
+      return res.status(400).json({ message: 'Invalid urgency level.' });
     }
 
     // Verify patient exists
@@ -125,6 +134,27 @@ async function updateRequest(req, res) {
   try {
     const { status, urgency, notes, units_required } = req.body;
 
+    if (status && !EDITABLE_STATUSES.includes(status)) {
+      return res.status(400).json({
+        message: 'Status can be set to Pending, Approved or Rejected. A request becomes Fulfilled when blood is issued for it.'
+      });
+    }
+    if (urgency && !URGENCIES.includes(urgency)) {
+      return res.status(400).json({ message: 'Invalid urgency level.' });
+    }
+    if (units_required && !validUnits(units_required)) {
+      return res.status(400).json({ message: 'Units required must be between 1 and 10.' });
+    }
+
+    // A fulfilled request already has blood issued against it. Reopening it would let it be issued again.
+    const [check] = await pool.query('SELECT status FROM blood_requests WHERE id = ?', [req.params.id]);
+    if (check.length === 0) {
+      return res.status(404).json({ message: 'Blood request not found.' });
+    }
+    if (check[0].status === 'Fulfilled') {
+      return res.status(400).json({ message: 'A fulfilled request can no longer be changed.' });
+    }
+
     // Build dynamic update
     const updates = [];
     const params = [];
@@ -155,13 +185,14 @@ async function updateRequest(req, res) {
 
     params.push(req.params.id);
 
+    // Checked again here in case blood was issued for it since the check above
     const [result] = await pool.query(
-      `UPDATE blood_requests SET ${updates.join(', ')} WHERE id = ?`,
+      `UPDATE blood_requests SET ${updates.join(', ')} WHERE id = ? AND status <> 'Fulfilled'`,
       params
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'Blood request not found.' });
+      return res.status(400).json({ message: 'A fulfilled request can no longer be changed.' });
     }
 
     res.json({ message: 'Blood request updated successfully.' });

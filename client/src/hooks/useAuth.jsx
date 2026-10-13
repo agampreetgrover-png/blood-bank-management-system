@@ -1,38 +1,27 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import api from '../services/api';
+import { readSession, saveSession, clearSession, subscribe } from '../services/session';
 
 const AuthContext = createContext(null);
 
-export function AuthProvider({ children }) {
-  const [admin, setAdmin] = useState(null);
-  const [loading, setLoading] = useState(true);
+const savedAdmin = () => readSession('admin')?.profile || null;
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    const storedAdmin = localStorage.getItem('admin');
-    if (token && storedAdmin) {
-      setAdmin(JSON.parse(storedAdmin));
-    }
-    setLoading(false);
-  }, []);
+export function AuthProvider({ children }) {
+  const [admin, setAdmin] = useState(savedAdmin);
+
+  // Follows the session when it ends after a 401 (services/api.js) or changes in another tab
+  useEffect(() => subscribe('admin', () => setAdmin(savedAdmin())), []);
 
   const login = async (email, password) => {
     const response = await api.post('/auth/login', { email, password });
-    const { token, admin: adminData } = response.data;
-    localStorage.setItem('token', token);
-    localStorage.setItem('admin', JSON.stringify(adminData));
-    setAdmin(adminData);
+    saveSession('admin', response.data.token, response.data.admin);
     return response.data;
   };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('admin');
-    setAdmin(null);
-  };
+  const logout = () => clearSession('admin');
 
   return (
-    <AuthContext.Provider value={{ admin, login, logout, loading, isAuthenticated: !!admin }}>
+    <AuthContext.Provider value={{ admin, login, logout, isAuthenticated: !!admin }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
-import { useUserAuth } from '../../hooks/useUserAuth';
+import { useUserAuth, passwordProblem } from '../../hooks/useUserAuth';
 import { useToast } from '../../context/ToastContext';
+import OtpStep from '../../components/OtpStep';
 
+// Two steps: enter details + password, then confirm the email with a one-time code.
+// The account is only created on the server once the code is verified.
 function UserSignupPage() {
   const [bloodGroups, setBloodGroups] = useState([]);
   const [formData, setFormData] = useState({
@@ -16,11 +19,13 @@ function UserSignupPage() {
   });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const { register, isLoggedIn } = useUserAuth();
+  const [otp, setOtp] = useState(null); // { email, resendIn, expiresIn } once a code has been sent
+  const { requestSignupOtp, verifySignup, isLoggedIn } = useUserAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const redirectTo = location.state?.from || '/account';
+  const from = location.state?.from;
+  const redirectTo = from && !from.startsWith('/admin') ? from : '/account';
 
   useEffect(() => {
     api.get('/dashboard/blood-groups')
@@ -36,49 +41,71 @@ function UserSignupPage() {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
+  const sendCode = () => {
+    const phone = formData.phone.replace(/[\s-]/g, '');
+    return requestSignupOtp({
+      full_name: formData.full_name.trim(),
+      email: formData.email.trim(),
+      phone,
+      password: formData.password,
+      blood_group_id: formData.blood_group_id ? parseInt(formData.blood_group_id, 10) : null
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
-    const phone = formData.phone.replace(/[\s-]/g, '');
-    if (!/^\d{10}$/.test(phone)) {
+    if (!/^\d{10}$/.test(formData.phone.replace(/[\s-]/g, ''))) {
       setError('Please enter a valid 10-digit mobile number.');
       return;
     }
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters.');
-      return;
-    }
-    if (formData.password !== formData.confirm_password) {
-      setError('Passwords do not match.');
+    const problem = passwordProblem(formData.password, formData.confirm_password);
+    if (problem) {
+      setError(problem);
       return;
     }
 
     setSubmitting(true);
     try {
-      await register({
-        full_name: formData.full_name.trim(),
-        email: formData.email.trim(),
-        phone,
-        password: formData.password,
-        blood_group_id: formData.blood_group_id ? parseInt(formData.blood_group_id, 10) : null
-      });
-      showToast('Account created successfully', 'success');
-      navigate(redirectTo, { replace: true });
+      const data = await sendCode();
+      setOtp({ email: data.email, resendIn: data.resend_in, expiresIn: data.expires_in });
     } catch (err) {
-      setError(err.response?.data?.message || 'Unable to create account. Please try again.');
+      setError(err.response?.data?.message || 'Unable to send the code. Please try again.');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleVerify = async (code) => {
+    await verifySignup(otp.email, code);
+    showToast('Account created successfully', 'success');
+    navigate(redirectTo, { replace: true });
+  };
+
+  const handleResend = async () => {
+    const data = await sendCode();
+    return data.resend_in;
   };
 
   return (
     <div className="pub-container pub-page">
       <div className="pub-auth-card pub-auth-wide">
         <div className="pub-auth-header">
-          <h1>Create an account</h1>
+          <h1>{otp ? 'Verify your email' : 'Create an account'}</h1>
         </div>
 
+        {otp ? (
+          <OtpStep
+            email={otp.email}
+            resendIn={otp.resendIn}
+            expiresIn={otp.expiresIn}
+            onVerify={handleVerify}
+            onResend={handleResend}
+            onBack={() => setOtp(null)}
+          />
+        ) : (
+        <>
         {error && <div className="alert alert-error" role="alert"><span>{error}</span></div>}
 
         <form onSubmit={handleSubmit}>
@@ -106,8 +133,8 @@ function UserSignupPage() {
           <div className="form-row">
             <div className="form-group">
               <label htmlFor="us-pass">Password *</label>
-              <input id="us-pass" name="password" type="password" minLength="6" className="form-control" value={formData.password} onChange={handleChange} autoComplete="new-password" required />
-              <small className="field-hint">At least 6 characters</small>
+              <input id="us-pass" name="password" type="password" minLength="8" className="form-control" value={formData.password} onChange={handleChange} autoComplete="new-password" required />
+              <small className="field-hint">At least 8 characters</small>
             </div>
             <div className="form-group">
               <label htmlFor="us-pass2">Password again *</label>
@@ -115,9 +142,12 @@ function UserSignupPage() {
             </div>
           </div>
           <button type="submit" className="btn btn-primary btn-submit" disabled={submitting}>
-            {submitting ? 'Creating account…' : 'Create account'}
+            {submitting ? 'Sending code…' : 'Create account'}
           </button>
+          <small className="field-hint">We'll email you a 6-digit code to confirm your address.</small>
         </form>
+        </>
+        )}
 
         <p className="pub-auth-switch">
           Already have an account? <Link to="/login" state={location.state}>Log in</Link>

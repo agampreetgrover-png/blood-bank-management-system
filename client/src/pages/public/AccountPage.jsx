@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useUserAuth } from '../../hooks/useUserAuth';
 import { useToast } from '../../context/ToastContext';
@@ -8,28 +8,24 @@ const formatDate = (value) => (value ? new Date(value).toLocaleDateString('en-IN
 const pillClass = (status) => `status-pill pill-${String(status).toLowerCase().replace(' ', '-')}`;
 
 function AccountPage() {
-  const { user, isLoggedIn, loading: authLoading, logout } = useUserAuth();
+  const { user, logout } = useUserAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!isLoggedIn) return;
     api.get('/users/me')
       .then((res) => setData(res.data))
       .catch((err) => {
+        // On a 401 the session has already ended (services/api.js) and RequireUser sends them to log in
         if (err.response?.status === 401) {
-          logout();
           showToast('Your session has expired. Please log in again.', 'info');
         } else {
           setError('Unable to load your account right now.');
         }
       });
-  }, [isLoggedIn]);
-
-  if (authLoading) return null;
-  if (!isLoggedIn) return <Navigate to="/login" state={{ from: '/account' }} replace />;
+  }, []);
 
   const profile = data?.user || user;
 
@@ -59,6 +55,7 @@ function AccountPage() {
             <dt>Email</dt><dd>{profile.email}</dd>
             <dt>Mobile</dt><dd>{profile.phone}</dd>
             <dt>Blood group</dt><dd>{profile.blood_group || 'Not set'}</dd>
+            <dt>Password</dt><dd><Link to="/reset-password">Change password</Link></dd>
           </dl>
           <div className="pub-account-actions">
             <Link to="/donate" className="btn btn-primary">Book a donation</Link>

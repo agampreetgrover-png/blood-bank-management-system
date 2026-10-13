@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import api from '../../services/api';
+import { today } from '../../utils/dates';
 import { useToast } from '../../context/ToastContext';
 import { useUserAuth } from '../../hooks/useUserAuth';
 import site from '../../config/site';
-
-const today = () => new Date().toISOString().split('T')[0];
 
 const emptyForm = () => ({
   patient_name: '',
@@ -28,7 +27,7 @@ function RequestBloodPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [result, setResult] = useState(null);
   const { showToast } = useToast();
-  const { user, isLoggedIn, loading: authLoading } = useUserAuth();
+  const { user } = useUserAuth();
 
   // Pre-fill contact details from the signed-in account
   useEffect(() => {
@@ -81,10 +80,6 @@ function RequestBloodPage() {
       setSubmitting(false);
     }
   };
-
-  // Requests belong to an account so that only the requester (and staff) can follow them
-  if (authLoading) return null;
-  if (!isLoggedIn) return <Navigate to="/login" state={{ from: '/request-blood' }} replace />;
 
   if (result) {
     return (

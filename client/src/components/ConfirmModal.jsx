@@ -1,4 +1,4 @@
-import { Warning, Question, X } from '@phosphor-icons/react';
+import { X } from '@phosphor-icons/react';
 import { useEffect } from 'react';
 
 function ConfirmModal({
@@ -56,12 +56,7 @@ function ConfirmModal({
           )}
         </div>
         <div className="modal-body">
-          <div className="confirm-modal-content">
-            <div className={`confirm-icon-wrapper ${confirmVariant}`}>
-              {confirmVariant === 'danger' ? <Warning size={24} /> : <Question size={24} />}
-            </div>
-            <p className="confirm-modal-message">{message}</p>
-          </div>
+          <p>{message}</p>
         </div>
         <div className="modal-footer">
           <button

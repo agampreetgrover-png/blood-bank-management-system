@@ -14,6 +14,7 @@ function DashboardPage() {
   const fetchDashboard = async () => {
     try {
       setLoading(true);
+      setError('');
       const res = await api.get('/dashboard/stats');
       setData(res.data);
     } catch (err) {

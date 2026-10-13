@@ -1,23 +1,29 @@
 const { pool } = require('../config/db');
+const { localDate, isDateString } = require('../utils/dates');
+
+// Sets the donor's last donation date, unless they already have a later one (e.g. an older donation entered late)
+const SET_LAST_DONATION =
+  'UPDATE donors SET last_donation_date = ? WHERE id = ? AND (last_donation_date IS NULL OR last_donation_date < ?)';
 
 // POST /api/donations - Record a donation with inventory update (TRANSACTION)
 async function createDonation(req, res) {
-  const connection = await pool.getConnection();
+  let connection;
   try {
-    const { donor_id, blood_group_id, donation_date, units_donated, notes } = req.body;
+    connection = await pool.getConnection();
+    const { donor_id, donation_date, units_donated, notes } = req.body;
 
-    if (!donor_id || !blood_group_id || !donation_date) {
-      return res.status(400).json({ message: 'Donor, blood group, and donation date are required.' });
+    if (!donor_id || !donation_date) {
+      return res.status(400).json({ message: 'Donor and donation date are required.' });
     }
 
-    const units = units_donated || 1;
-    if (units < 1 || units > 3) {
+    const units = units_donated === undefined ? 1 : Number(units_donated);
+    if (!Number.isInteger(units) || units < 1 || units > 3) {
       return res.status(400).json({ message: 'Units donated must be between 1 and 3.' });
     }
 
     // Verify donor exists and is active
     const [donorCheck] = await connection.query(
-      'SELECT id, full_name, is_active, is_eligible FROM donors WHERE id = ?', [donor_id]
+      'SELECT id, full_name, blood_group_id, is_active, is_eligible FROM donors WHERE id = ?', [donor_id]
     );
     if (donorCheck.length === 0) {
       return res.status(404).json({ message: 'Donor not found.' });
@@ -29,11 +35,8 @@ async function createDonation(req, res) {
       return res.status(400).json({ message: 'Donor is currently not eligible to donate.' });
     }
 
-    // Verify blood group exists
-    const [bgCheck] = await connection.query('SELECT id FROM blood_groups WHERE id = ?', [blood_group_id]);
-    if (bgCheck.length === 0) {
-      return res.status(400).json({ message: 'Invalid blood group.' });
-    }
+    // The blood goes into stock under the donor's own group, whatever group the form sent
+    const blood_group_id = donorCheck[0].blood_group_id;
 
     // BEGIN TRANSACTION
     await connection.beginTransaction();
@@ -52,10 +55,7 @@ async function createDonation(req, res) {
     );
 
     // Update donor's last donation date
-    await connection.query(
-      'UPDATE donors SET last_donation_date = ? WHERE id = ?',
-      [donation_date, donor_id]
-    );
+    await connection.query(SET_LAST_DONATION, [donation_date, donor_id, donation_date]);
 
     // COMMIT TRANSACTION
     await connection.commit();
@@ -66,11 +66,11 @@ async function createDonation(req, res) {
     });
   } catch (error) {
     // ROLLBACK on failure
-    await connection.rollback();
+    await connection?.rollback().catch(() => {});
     console.error('Create donation error:', error);
     res.status(500).json({ message: 'Failed to record donation.' });
   } finally {
-    connection.release();
+    connection?.release();
   }
 }
 
@@ -151,8 +151,9 @@ async function getDonationById(req, res) {
 
 // POST /api/donations/public-signup - Public portal registration & donation appointment
 async function publicDonationSignup(req, res) {
-  const connection = await pool.getConnection();
+  let connection;
   try {
+    connection = await pool.getConnection();
     const {
       full_name,
       age,
@@ -177,6 +178,11 @@ async function publicDonationSignup(req, res) {
       return res.status(400).json({
         message: 'Donor age must be between 18 and 65 years.'
       });
+    }
+
+    const scheduledDate = donation_date || localDate();
+    if (!only_register_donor && (!isDateString(scheduledDate) || scheduledDate < localDate())) {
+      return res.status(400).json({ message: 'Choose a donation date from today onwards.' });
     }
 
     // The booking always uses the mobile number on the logged-in account, never one typed into the form
@@ -237,17 +243,16 @@ async function publicDonationSignup(req, res) {
         });
       }
 
-      // Check last donation interval (minimum 90 days required)
-      if (donor.last_donation_date) {
+      // Check last donation interval (minimum 90 days required) when booking a donation.
+      // last_donation_date comes back as local midnight, so it is compared as a local calendar date.
+      if (!only_register_donor && donor.last_donation_date) {
         const lastDate = new Date(donor.last_donation_date);
-        const targetDate = donation_date ? new Date(donation_date) : new Date();
-        const diffDays = Math.floor((targetDate - lastDate) / (1000 * 60 * 60 * 24));
-        if (diffDays < 90) {
+        const nextEligible = new Date(lastDate);
+        nextEligible.setDate(nextEligible.getDate() + 90);
+        if (scheduledDate < localDate(nextEligible)) {
           await connection.rollback();
-          const nextEligible = new Date(lastDate);
-          nextEligible.setDate(nextEligible.getDate() + 90);
           return res.status(400).json({
-            message: `A minimum 90-day interval is required between donations. Last donation was on ${lastDate.toISOString().split('T')[0]}. Next eligible date is ${nextEligible.toISOString().split('T')[0]}.`
+            message: `A minimum 90-day interval is required between donations. Last donation was on ${localDate(lastDate)}. Next eligible date is ${localDate(nextEligible)}.`
           });
         }
       }
@@ -271,7 +276,6 @@ async function publicDonationSignup(req, res) {
     }
 
     let donationId = null;
-    const scheduledDate = donation_date || new Date().toISOString().split('T')[0];
 
     if (!only_register_donor) {
       // Check for existing pending donation
@@ -313,35 +317,39 @@ async function publicDonationSignup(req, res) {
       status: only_register_donor ? 'Registered' : 'Pending'
     });
   } catch (error) {
-    await connection.rollback();
+    await connection?.rollback().catch(() => {});
     console.error('Public donation signup error:', error);
     res.status(500).json({ message: 'Failed to process blood donation sign-up.' });
   } finally {
-    connection.release();
+    connection?.release();
   }
 }
 
 // PUT /api/donations/:id/complete - Admin verifies and completes a pending donation (TRANSACTION)
 async function completePendingDonation(req, res) {
-  const connection = await pool.getConnection();
+  let connection;
   try {
+    connection = await pool.getConnection();
     const donationId = req.params.id;
 
+    await connection.beginTransaction();
+
+    // Locked, so a double click or two staff at once can't add the same units to stock twice
     const [donationRows] = await connection.query(
-      'SELECT * FROM donations WHERE id = ?',
+      'SELECT * FROM donations WHERE id = ? FOR UPDATE',
       [donationId]
     );
 
     if (donationRows.length === 0) {
+      await connection.rollback();
       return res.status(404).json({ message: 'Donation record not found.' });
     }
 
     const donation = donationRows[0];
-    if (donation.status === 'Completed') {
-      return res.status(400).json({ message: 'This donation has already been marked completed.' });
+    if (donation.status !== 'Pending') {
+      await connection.rollback();
+      return res.status(400).json({ message: `Only pending donations can be completed. This one is ${donation.status.toLowerCase()}.` });
     }
-
-    await connection.beginTransaction();
 
     // Mark completed
     await connection.query(
@@ -356,10 +364,7 @@ async function completePendingDonation(req, res) {
     );
 
     // Update donor's last donation date
-    await connection.query(
-      `UPDATE donors SET last_donation_date = ? WHERE id = ?`,
-      [donation.donation_date, donation.donor_id]
-    );
+    await connection.query(SET_LAST_DONATION, [donation.donation_date, donation.donor_id, donation.donation_date]);
 
     await connection.commit();
 
@@ -368,11 +373,11 @@ async function completePendingDonation(req, res) {
       id: donationId
     });
   } catch (error) {
-    await connection.rollback();
+    await connection?.rollback().catch(() => {});
     console.error('Complete donation error:', error);
     res.status(500).json({ message: 'Failed to complete donation.' });
   } finally {
-    connection.release();
+    connection?.release();
   }
 }
 
@@ -392,18 +397,22 @@ async function rejectPendingDonation(req, res) {
     }
 
     const donation = donationRows[0];
-    if (donation.status === 'Completed') {
-      return res.status(400).json({ message: 'Cannot reject a completed donation that has already updated inventory.' });
+    if (donation.status !== 'Pending') {
+      return res.status(400).json({ message: `Only pending donations can be rejected. This one is ${donation.status.toLowerCase()}.` });
     }
 
     const updatedNotes = reason
       ? `${donation.notes ? donation.notes + ' | ' : ''}Rejected: ${reason}`
       : donation.notes;
 
-    await pool.query(
-      `UPDATE donations SET status = 'Rejected', notes = ? WHERE id = ?`,
+    // Only while still pending, in case it was completed in the meantime
+    const [result] = await pool.query(
+      `UPDATE donations SET status = 'Rejected', notes = ? WHERE id = ? AND status = 'Pending'`,
       [updatedNotes, donationId]
     );
+    if (result.affectedRows === 0) {
+      return res.status(409).json({ message: 'This donation was just updated by someone else. Refresh and try again.' });
+    }
 
     res.json({ message: 'Donation request marked as rejected.' });
   } catch (error) {

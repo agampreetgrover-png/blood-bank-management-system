@@ -2,7 +2,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../context/ToastContext';
 import SidebarShell from './SidebarShell';
-import { SignOut } from '@phosphor-icons/react';
 
 const NAV_ITEMS = [
   { to: '/admin', label: 'Dashboard', end: true },
@@ -12,10 +11,6 @@ const NAV_ITEMS = [
   { to: '/admin/requests', label: 'Requests' },
   { to: '/admin/issues', label: 'Dispensation' }
 ];
-
-const initialsOf = (name) => (
-  name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('')
-);
 
 function AdminLayout() {
   const { admin, logout } = useAuth();
@@ -28,18 +23,11 @@ function AdminLayout() {
     navigate('/admin/login');
   };
 
-  const adminName = admin?.name || 'Administrator';
-
   const footer = (
     <div className="admin-user">
-      <span className="admin-avatar" aria-hidden="true">{initialsOf(adminName)}</span>
-      <div className="admin-user-details">
-        <strong>{adminName}</strong>
-        <small>{admin?.email || 'admin@bloodbank.com'}</small>
-      </div>
-      <button type="button" className="admin-logout" onClick={handleLogout} title="Sign out" aria-label="Log out">
-        <SignOut size={18} />
-      </button>
+      <strong>{admin?.name || 'Administrator'}</strong>
+      <small>{admin?.email || 'admin@bloodbank.com'}</small>
+      <button type="button" className="admin-logout" onClick={handleLogout}>Log out</button>
     </div>
   );
 

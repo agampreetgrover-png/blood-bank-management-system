@@ -1,6 +1,6 @@
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
 const { pool } = require('../config/db');
+const { signToken } = require('../utils/tokens');
+const { checkPassword } = require('../utils/passwords');
 
 // POST /api/auth/login
 async function login(req, res) {
@@ -13,29 +13,21 @@ async function login(req, res) {
 
     const [rows] = await pool.query(
       'SELECT id, name, email, password, is_active FROM admins WHERE email = ?',
-      [email]
+      [String(email).trim()]
     );
+    const admin = rows[0];
 
-    if (rows.length === 0) {
+    // The password is checked before anything else is said about the account,
+    // so a stranger can't learn which staff emails exist or are deactivated
+    if (!(await checkPassword(password, admin?.password))) {
       return res.status(401).json({ message: 'Invalid email or password.' });
     }
-
-    const admin = rows[0];
 
     if (!admin.is_active) {
       return res.status(403).json({ message: 'Account is deactivated.' });
     }
 
-    const isMatch = await bcrypt.compare(password, admin.password);
-    if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid email or password.' });
-    }
-
-    const token = jwt.sign(
-      { id: admin.id, name: admin.name, email: admin.email, role: 'admin' },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
-    );
+    const token = signToken('admin', { id: admin.id, name: admin.name, email: admin.email });
 
     res.json({
       message: 'Login successful',

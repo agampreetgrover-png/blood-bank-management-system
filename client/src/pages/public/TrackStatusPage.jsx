@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import api from '../../services/api';
-import { useUserAuth } from '../../hooks/useUserAuth';
 import { useToast } from '../../context/ToastContext';
 
 const formatDate = (value) => (value
@@ -12,29 +11,22 @@ const pillClass = (status) => `status-pill pill-${String(status).toLowerCase().r
 // Shows only the logged-in user's own requests and bookings. The server filters by
 // account, so there is no way to look up someone else's record from here.
 function TrackStatusPage() {
-  const { isLoggedIn, loading: authLoading, logout } = useUserAuth();
   const { showToast } = useToast();
-  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!isLoggedIn) return;
     api.get('/users/me')
       .then((res) => setData(res.data))
       .catch((err) => {
+        // On a 401 the session has already ended (services/api.js) and RequireUser sends them to log in
         if (err.response?.status === 401) {
-          logout();
           showToast('Your session has expired. Log in again to see your requests.', 'info');
-          navigate('/login', { state: { from: '/track' } });
         } else {
           setError('Your requests could not be loaded. Refresh the page to try again.');
         }
       });
-  }, [isLoggedIn]);
-
-  if (authLoading) return null;
-  if (!isLoggedIn) return <Navigate to="/login" state={{ from: '/track' }} replace />;
+  }, []);
 
   const donor = data?.donor;
 

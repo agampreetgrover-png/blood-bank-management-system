@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../../services/api';
+import { today } from '../../utils/dates';
 import Modal from '../../components/Modal';
 import SearchInput from '../../components/SearchInput';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -28,12 +29,12 @@ function RequestsPage() {
     blood_group_id: '',
     units_required: 1,
     hospital: '',
-    request_date: new Date().toISOString().split('T')[0],
+    request_date: today(),
     urgency: 'Normal',
     notes: ''
   });
 
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
+  const [issueDate, setIssueDate] = useState(today());
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const { showToast } = useToast();
@@ -95,7 +96,7 @@ function RequestsPage() {
       blood_group_id: '',
       units_required: 1,
       hospital: '',
-      request_date: new Date().toISOString().split('T')[0],
+      request_date: today(),
       urgency: 'Normal',
       notes: ''
     });
@@ -148,7 +149,7 @@ function RequestsPage() {
 
   const openIssueModal = (r) => {
     setActiveRequest(r);
-    setIssueDate(new Date().toISOString().split('T')[0]);
+    setIssueDate(today());
     setFormError('');
     setShowIssueModal(true);
     fetchInventory();
@@ -284,6 +285,8 @@ function RequestsPage() {
                   {requests.map((r) => {
                     const stock = getAvailableStock(r.blood_group_id);
                     const canIssue = stock >= r.units_required;
+                    // Approved requests still need blood issued, same as pending ones
+                    const isOpen = r.status === 'Pending' || r.status === 'Approved';
                     return (
                       <tr key={r.id}>
                         <td><strong>{r.patient_name}</strong></td>
@@ -314,7 +317,7 @@ function RequestsPage() {
                         </td>
                         <td>
                           <div className="action-btns">
-                            {r.status === 'Pending' ? (
+                            {isOpen ? (
                               <>
                                 <button
                                   className="btn btn-sm btn-primary"
@@ -471,7 +474,7 @@ function RequestsPage() {
                   type="date"
                   className="form-control"
                   value={issueDate}
-                  max={new Date().toISOString().split('T')[0]}
+                  max={today()}
                   onChange={(e) => setIssueDate(e.target.value)}
                   required
                 />
@@ -498,7 +501,7 @@ function RequestsPage() {
       <ConfirmModal
         isOpen={confirmDelete.isOpen}
         title="Cancel Request"
-        message="Are you sure you want to cancel this pending blood requisition?"
+        message="Are you sure you want to cancel this blood requisition?"
         confirmText="Cancel Request"
         onConfirm={executeDelete}
         onClose={() => setConfirmDelete({ isOpen: false, requestId: null })}

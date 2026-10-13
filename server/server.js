@@ -4,6 +4,7 @@ require('dotenv').config();
 
 const { testConnection } = require('./config/db');
 const { runMigrations } = require('./utils/migrate');
+const { checkMailer } = require('./utils/mailer');
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
@@ -54,12 +55,17 @@ app.use((err, req, res, next) => {
 
 // Start server
 async function startServer() {
+  if (!process.env.JWT_SECRET) {
+    console.error('JWT_SECRET is not set in server/.env. It is needed to sign login tokens.');
+    process.exit(1);
+  }
   await testConnection();
   await runMigrations();
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`API: http://localhost:${PORT}/api/health`);
   });
+  checkMailer(); // not awaited: a slow mail server shouldn't hold up startup
 }
 
 startServer();

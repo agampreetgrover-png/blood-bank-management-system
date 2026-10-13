@@ -2,20 +2,43 @@ const { pool } = require('../config/db');
 
 // POST /api/issues - Issue blood with inventory check (TRANSACTION)
 async function createIssue(req, res) {
-  const connection = await pool.getConnection();
+  let connection;
   try {
-    const { request_id, patient_id, blood_group_id, units_issued, issue_date, notes } = req.body;
+    connection = await pool.getConnection();
+    const { request_id, patient_id, blood_group_id, issue_date, notes } = req.body;
 
-    if (!patient_id || !blood_group_id || !units_issued || !issue_date) {
+    if (!patient_id || !blood_group_id || !req.body.units_issued || !issue_date) {
       return res.status(400).json({ message: 'Patient, blood group, units, and issue date are required.' });
     }
 
-    if (units_issued < 1) {
-      return res.status(400).json({ message: 'Units issued must be at least 1.' });
+    const units_issued = Number(req.body.units_issued);
+    if (!Number.isInteger(units_issued) || units_issued < 1) {
+      return res.status(400).json({ message: 'Units issued must be a whole number of at least 1.' });
     }
 
     // BEGIN TRANSACTION
     await connection.beginTransaction();
+
+    // Issuing against a request fulfils it, so the request has to still be open and match what is issued.
+    // The row is locked so the same request can't be dispensed twice at the same time.
+    if (request_id) {
+      const [[request]] = await connection.query(
+        'SELECT patient_id, blood_group_id, status FROM blood_requests WHERE id = ? FOR UPDATE',
+        [request_id]
+      );
+      if (!request) {
+        await connection.rollback();
+        return res.status(404).json({ message: 'Blood request not found.' });
+      }
+      if (request.status !== 'Pending' && request.status !== 'Approved') {
+        await connection.rollback();
+        return res.status(400).json({ message: `This request is already ${request.status.toLowerCase()}.` });
+      }
+      if (request.patient_id !== Number(patient_id) || request.blood_group_id !== Number(blood_group_id)) {
+        await connection.rollback();
+        return res.status(400).json({ message: 'Patient and blood group must match the request.' });
+      }
+    }
 
     // Check inventory availability
     const [invCheck] = await connection.query(
@@ -80,11 +103,11 @@ async function createIssue(req, res) {
     });
   } catch (error) {
     // ROLLBACK on failure
-    await connection.rollback();
+    await connection?.rollback().catch(() => {});
     console.error('Create issue error:', error);
     res.status(500).json({ message: 'Failed to issue blood.' });
   } finally {
-    connection.release();
+    connection?.release();
   }
 }
 

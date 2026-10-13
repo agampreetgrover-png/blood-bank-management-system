@@ -135,12 +135,13 @@ async function updateDonor(req, res) {
       return res.status(409).json({ message: 'Another donor with this phone number already exists.' });
     }
 
+    // The admin form doesn't send date of birth or the eligible/active flags, so values left out are kept as they are
     const [result] = await pool.query(
-      `UPDATE donors SET full_name = ?, date_of_birth = ?, age = ?, gender = ?, blood_group_id = ?,
-       phone = ?, email = ?, address = ?, is_eligible = ?, is_active = ?
+      `UPDATE donors SET full_name = ?, date_of_birth = COALESCE(?, date_of_birth), age = ?, gender = ?, blood_group_id = ?,
+       phone = ?, email = ?, address = ?, is_eligible = COALESCE(?, is_eligible), is_active = COALESCE(?, is_active)
        WHERE id = ?`,
       [full_name, date_of_birth || null, age, gender, blood_group_id, phone, email || null, address || null,
-       is_eligible !== undefined ? is_eligible : 1, is_active !== undefined ? is_active : 1, req.params.id]
+       is_eligible ?? null, is_active ?? null, req.params.id]
     );
 
     if (result.affectedRows === 0) {

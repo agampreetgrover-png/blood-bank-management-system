@@ -7,7 +7,7 @@ CREATE DATABASE IF NOT EXISTS blood_bank_db;
 USE blood_bank_db;
 
 SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS blood_issues, blood_requests, donations, inventory, patients, donors, users, admins, blood_groups;
+DROP TABLE IF EXISTS blood_issues, blood_requests, donations, inventory, patients, donors, otp_codes, users, admins, blood_groups;
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- ============================================
@@ -44,12 +44,31 @@ CREATE TABLE users (
     full_name VARCHAR(150) NOT NULL,
     email VARCHAR(100) NOT NULL UNIQUE,
     phone VARCHAR(15) NOT NULL UNIQUE,
-    password VARCHAR(255) NOT NULL,
+    password VARCHAR(255) DEFAULT NULL,  -- bcrypt hash; login needs it plus an emailed code
     blood_group_id INT DEFAULT NULL,
     is_active TINYINT(1) DEFAULT 1,
+    token_version INT NOT NULL DEFAULT 0,  -- raised on password reset, which signs out older sessions
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (blood_group_id) REFERENCES blood_groups(id)
+);
+
+-- ============================================
+-- Table: otp_codes
+-- One-time sign up / login / password reset codes (only an HMAC of the code is stored).
+-- For sign up, payload holds the details entered until the email is verified.
+-- ============================================
+CREATE TABLE otp_codes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(100) NOT NULL,
+    purpose ENUM('signup', 'login', 'reset') NOT NULL,
+    code_hash CHAR(64) NOT NULL,
+    payload TEXT DEFAULT NULL,
+    attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    expires_at DATETIME NOT NULL,
+    consumed_at DATETIME DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_otp_lookup (email, purpose, created_at)
 );
 
 -- ============================================

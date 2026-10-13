@@ -1,5 +1,10 @@
 const { pool } = require('../config/db');
 
+// Age 0 (a newborn) is valid, so a missing age can't be tested with !age
+const hasAge = (age) => age !== undefined && age !== null && age !== '';
+// Whole numbers only: Number(' ') and Number(true) would otherwise pass as 0 and 1
+const validAge = (age) => /^\d+$/.test(String(age)) && Number(age) <= 120;
+
 // GET /api/patients
 async function getAllPatients(req, res) {
   try {
@@ -66,11 +71,11 @@ async function createPatient(req, res) {
   try {
     const { full_name, age, gender, blood_group_id, hospital, doctor_name, phone, address } = req.body;
 
-    if (!full_name || !age || !gender || !blood_group_id || !hospital || !phone) {
+    if (!full_name || !hasAge(age) || !gender || !blood_group_id || !hospital || !phone) {
       return res.status(400).json({ message: 'Full name, age, gender, blood group, hospital, and phone are required.' });
     }
 
-    if (age < 0 || age > 120) {
+    if (!validAge(age)) {
       return res.status(400).json({ message: 'Please provide a valid age.' });
     }
 
@@ -102,11 +107,11 @@ async function updatePatient(req, res) {
   try {
     const { full_name, age, gender, blood_group_id, hospital, doctor_name, phone, address, is_active } = req.body;
 
-    if (!full_name || !age || !gender || !blood_group_id || !hospital || !phone) {
+    if (!full_name || !hasAge(age) || !gender || !blood_group_id || !hospital || !phone) {
       return res.status(400).json({ message: 'Full name, age, gender, blood group, hospital, and phone are required.' });
     }
 
-    if (age < 0 || age > 120) {
+    if (!validAge(age)) {
       return res.status(400).json({ message: 'Please provide a valid age.' });
     }
 
@@ -114,12 +119,14 @@ async function updatePatient(req, res) {
       return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' });
     }
 
+    // The admin form doesn't send doctor, address or the active flag, so values left out are kept as they are
     const [result] = await pool.query(
       `UPDATE patients SET full_name = ?, age = ?, gender = ?, blood_group_id = ?,
-       hospital = ?, doctor_name = ?, phone = ?, address = ?, is_active = ?
+       hospital = ?, doctor_name = COALESCE(?, doctor_name), phone = ?, address = COALESCE(?, address),
+       is_active = COALESCE(?, is_active)
        WHERE id = ?`,
       [full_name, age, gender, blood_group_id, hospital, doctor_name || null, phone,
-       address || null, is_active !== undefined ? is_active : 1, req.params.id]
+       address || null, is_active ?? null, req.params.id]
     );
 
     if (result.affectedRows === 0) {

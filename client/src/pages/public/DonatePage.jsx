@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import api from '../../services/api';
+import { today } from '../../utils/dates';
 import { useToast } from '../../context/ToastContext';
 import { useUserAuth } from '../../hooks/useUserAuth';
 
@@ -19,13 +20,13 @@ function DonatePage() {
     phone: '',
     email: '',
     address: '',
-    donation_date: new Date().toISOString().split('T')[0],
+    donation_date: today(),
     notes: '',
     accepted_terms: false
   });
 
   const { showToast } = useToast();
-  const { user, isLoggedIn, loading: authLoading } = useUserAuth();
+  const { user } = useUserAuth();
 
   // Pre-fill blank fields from the signed-in account
   useEffect(() => {
@@ -137,26 +138,12 @@ function DonatePage() {
     }
   };
 
-  const handleReset = () => {
+  // Back to the filled-in form, e.g. to pick another date. Sending it again updates this booking.
+  // (An account has one donor profile, so the form can't be reused to register someone else.)
+  const handleChangeBooking = () => {
     setSubmittedData(null);
-    setFormData({
-      full_name: '',
-      age: '',
-      gender: 'Male',
-      blood_group_id: '',
-      phone: '',
-      email: '',
-      address: '',
-      donation_date: new Date().toISOString().split('T')[0],
-      notes: '',
-      accepted_terms: false
-    });
     setErrorMessage('');
   };
-
-  // Bookings are made from the donor's own account
-  if (authLoading) return null;
-  if (!isLoggedIn) return <Navigate to="/login" state={{ from: '/donate' }} replace />;
 
   return (
     <div className="pub-container pub-page pub-narrow">
@@ -245,9 +232,9 @@ function DonatePage() {
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={handleReset}
+                onClick={handleChangeBooking}
               >
-                Register someone else
+                Change booking
               </button>
             </div>
           </div>
@@ -402,7 +389,7 @@ function DonatePage() {
                       id="donation-date"
                       name="donation_date"
                       type="date"
-                      min={new Date().toISOString().split('T')[0]}
+                      min={today()}
                       className="form-control"
                       value={formData.donation_date}
                       onChange={handleInputChange}

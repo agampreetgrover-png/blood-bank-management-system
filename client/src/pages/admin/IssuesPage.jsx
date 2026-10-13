@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../../services/api';
+import { today } from '../../utils/dates';
 import Modal from '../../components/Modal';
 import SearchInput from '../../components/SearchInput';
 import { useToast } from '../../context/ToastContext';
@@ -17,7 +18,7 @@ function IssuesPage() {
     patient_id: '',
     blood_group_id: '',
     units_issued: 1,
-    issue_date: new Date().toISOString().split('T')[0],
+    issue_date: today(),
     notes: ''
   });
 
@@ -80,7 +81,7 @@ function IssuesPage() {
       patient_id: '',
       blood_group_id: '',
       units_issued: 1,
-      issue_date: new Date().toISOString().split('T')[0],
+      issue_date: today(),
       notes: ''
     });
     setFormError('');
@@ -302,7 +303,7 @@ function IssuesPage() {
                 type="date"
                 className="form-control"
                 value={formData.issue_date}
-                max={new Date().toISOString().split('T')[0]}
+                max={today()}
                 onChange={(e) => setFormData({ ...formData, issue_date: e.target.value })}
                 required
               />

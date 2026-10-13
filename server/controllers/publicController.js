@@ -1,4 +1,5 @@
 const { pool } = require('../config/db');
+const { localDate, isDateString } = require('../utils/dates');
 
 function stockStatus(units) {
   if (units === 0) return 'Critical';
@@ -36,8 +37,9 @@ async function getPublicOverview(req, res) {
 
 // POST /api/public/blood-request - Public blood request (creates patient + pending request in a TRANSACTION)
 async function createPublicBloodRequest(req, res) {
-  const connection = await pool.getConnection();
+  let connection;
   try {
+    connection = await pool.getConnection();
     const {
       patient_name,
       age,
@@ -88,7 +90,11 @@ async function createPublicBloodRequest(req, res) {
       return res.status(400).json({ message: 'Invalid blood group selected.' });
     }
 
-    const requestDate = required_date || new Date().toISOString().split('T')[0];
+    const requestDate = required_date || localDate();
+    if (!isDateString(requestDate) || requestDate < localDate()) {
+      return res.status(400).json({ message: 'Choose a needed-by date from today onwards.' });
+    }
+
     const noteParts = ['Submitted via public website'];
     if (contact_name && contact_name.trim()) noteParts.push(`Contact person: ${contact_name.trim()}`);
     if (notes && notes.trim()) noteParts.push(notes.trim());
@@ -123,11 +129,11 @@ async function createPublicBloodRequest(req, res) {
       status: 'Pending'
     });
   } catch (error) {
-    await connection.rollback();
+    await connection?.rollback().catch(() => {});
     console.error('Public blood request error:', error);
     res.status(500).json({ message: 'Failed to submit blood request.' });
   } finally {
-    connection.release();
+    connection?.release();
   }
 }
 

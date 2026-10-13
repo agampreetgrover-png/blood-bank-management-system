@@ -1,24 +1,23 @@
-const jwt = require('jsonwebtoken');
+const { pool } = require('../config/db');
+const { readToken } = require('../utils/tokens');
 
-function authMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Access denied. No token provided.' });
+// Staff-only routes. The account is checked on every request, so deactivating an admin ends their session at once.
+async function authMiddleware(req, res, next) {
+  // Public user tokens are signed with the same secret; readToken only accepts admin tokens here
+  const token = readToken(req, 'admin');
+  if (!token) {
+    return res.status(401).json({ message: 'Please log in to continue.' });
   }
 
-  const token = authHeader.split(' ')[1];
-
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    // Public user tokens are signed with the same secret; only admin tokens may pass
-    if (decoded.role !== 'admin') {
-      return res.status(401).json({ message: 'Admin access required.' });
+    const [[admin]] = await pool.query('SELECT id, name, email, is_active FROM admins WHERE id = ?', [token.id]);
+    if (!admin || !admin.is_active) {
+      return res.status(401).json({ message: 'Your session has ended. Please log in again.' });
     }
-    req.admin = decoded;
+    req.admin = { id: admin.id, name: admin.name, email: admin.email, role: 'admin' };
     next();
   } catch (error) {
-    return res.status(401).json({ message: 'Invalid or expired token.' });
+    next(error);
   }
 }
 

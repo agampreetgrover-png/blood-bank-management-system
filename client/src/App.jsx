@@ -3,11 +3,13 @@ import { AuthProvider } from './hooks/useAuth';
 import { UserAuthProvider } from './hooks/useUserAuth';
 import { ToastProvider } from './context/ToastContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import RequireUser from './components/RequireUser';
 import AdminLayout from './components/AdminLayout';
 import PublicLayout from './components/PublicLayout';
 
 // Landing + login (both user and staff)
 import LandingPage from './pages/LandingPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 
 // Public website
 import HomePage from './pages/public/HomePage';
@@ -37,16 +39,21 @@ function App() {
               <Route path="/" element={<LandingPage key="user" role="user" />} />
               <Route path="/login" element={<LandingPage key="user" role="user" />} />
               <Route path="/admin/login" element={<LandingPage key="admin" role="admin" />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
 
               {/* Public website */}
               <Route element={<PublicLayout />}>
                 <Route path="home" element={<HomePage />} />
                 <Route path="availability" element={<BloodAvailabilityPage />} />
-                <Route path="donate" element={<DonatePage />} />
-                <Route path="request-blood" element={<RequestBloodPage />} />
-                <Route path="track" element={<TrackStatusPage />} />
                 <Route path="signup" element={<UserSignupPage />} />
-                <Route path="account" element={<AccountPage />} />
+
+                {/* Need a public account */}
+                <Route element={<RequireUser />}>
+                  <Route path="donate" element={<DonatePage />} />
+                  <Route path="request-blood" element={<RequestBloodPage />} />
+                  <Route path="track" element={<TrackStatusPage />} />
+                  <Route path="account" element={<AccountPage />} />
+                </Route>
               </Route>
               <Route path="/register-donor" element={<Navigate to="/donate" replace />} />
 

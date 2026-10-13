@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Drop, FirstAidKit } from '@phosphor-icons/react';
 import api from '../../services/api';
 import site from '../../config/site';
 import BloodTag from '../../components/BloodTag';
@@ -57,7 +56,6 @@ function HomePage() {
 
       <section className="pub-paths">
         <div className="pub-path">
-          <Drop size={28} weight="light" className="pub-path-icon" aria-hidden="true" />
           <h2>Give blood</h2>
           <p>
             Takes about 45 minutes, including a quick health check. You need to be 18–65 and weigh
@@ -67,7 +65,6 @@ function HomePage() {
         </div>
 
         <div className="pub-path">
-          <FirstAidKit size={28} weight="light" className="pub-path-icon" aria-hidden="true" />
           <h2>Need blood for a patient</h2>
           <p>
             Send the patient and hospital details and we'll call you back. If it's an emergency,
