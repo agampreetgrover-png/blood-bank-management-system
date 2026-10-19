@@ -71,7 +71,6 @@
 
 .admin-logout {
   margin-top: 8px;
-  padding: 0;
   border: none;
   background: none;
   text-decoration: underline;
@@ -90,11 +89,19 @@
   padding: 32px 40px;
 }
 
-/* The top bar only exists on small screens, to open the menu */
-.admin-topbar {
-  display: none;
+/* Staff panel and user site: only headings are bold.
+   On the Overview page (.admin-dashboard) the stock and recent-activity cards, headings included,
+   are all normal weight; the page title and the figures line above them stay bold. */
+.admin-shell .admin-brand,
+.admin-shell .admin-user strong,
+.admin-shell .main-content > :not(.admin-dashboard) :not(h1, h2, h3, h4, h5, h6, :is(h1, h2, h3, h4, h5, h6) *),
+.admin-dashboard .card,
+.admin-dashboard .card * {
+  font-weight: 400;
 }
 
+/* The top bar (menu button) and the scrim behind the open menu only exist on small screens */
+.admin-topbar,
 .admin-scrim {
   display: none;
 }

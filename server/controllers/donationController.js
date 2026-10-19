@@ -1,5 +1,6 @@
 const { pool } = require('../config/db');
 const { localDate, isDateString } = require('../utils/dates');
+const { EMAIL_RE } = require('../utils/validation');
 
 // Sets the donor's last donation date, unless they already have a later one (e.g. an older donation entered late)
 const SET_LAST_DONATION =
@@ -192,7 +193,7 @@ async function publicDonationSignup(req, res) {
     }
     const cleanPhone = account.phone;
 
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    if (email && !EMAIL_RE.test(email.trim())) {
       return res.status(400).json({
         message: 'Please provide a valid email address.'
       });
@@ -209,6 +210,10 @@ async function publicDonationSignup(req, res) {
     const bloodGroupName = bgCheck[0].group_name;
 
     await connection.beginTransaction();
+
+    // Locks the account until commit, so two quick submissions from it can't both find no donor
+    // profile (or no pending booking) and each create one
+    await connection.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [req.user.id]);
 
     // A donor profile belongs to one account. If a donor with this mobile number exists but isn't
     // linked to this account (e.g. registered at the desk), only staff may link it. The website
@@ -278,9 +283,11 @@ async function publicDonationSignup(req, res) {
     let donationId = null;
 
     if (!only_register_donor) {
+      const bookingNotes = notes ? notes.trim() : 'Public online appointment';
+
       // Check for existing pending donation
       const [pendingCheck] = await connection.query(
-        'SELECT id, donation_date FROM donations WHERE donor_id = ? AND status = "Pending"',
+        "SELECT id, donation_date FROM donations WHERE donor_id = ? AND status = 'Pending'",
         [donorId]
       );
 
@@ -289,14 +296,14 @@ async function publicDonationSignup(req, res) {
         donationId = pendingCheck[0].id;
         await connection.query(
           `UPDATE donations SET blood_group_id = ?, donation_date = ?, notes = ? WHERE id = ?`,
-          [blood_group_id, scheduledDate, notes ? notes.trim() : 'Public online appointment', donationId]
+          [blood_group_id, scheduledDate, bookingNotes, donationId]
         );
       } else {
         // Insert new pending donation
         const [insertDonation] = await connection.query(
           `INSERT INTO donations (donor_id, blood_group_id, donation_date, units_donated, status, notes, created_by)
            VALUES (?, ?, ?, 1, 'Pending', ?, NULL)`,
-          [donorId, blood_group_id, scheduledDate, notes ? notes.trim() : 'Public online appointment']
+          [donorId, blood_group_id, scheduledDate, bookingNotes]
         );
         donationId = insertDonation.insertId;
       }
@@ -435,7 +442,12 @@ async function deleteDonation(req, res) {
       });
     }
 
-    await pool.query('DELETE FROM donations WHERE id = ?', [req.params.id]);
+    // Only while not completed, in case it was completed (and added to stock) in the meantime
+    const [result] = await pool.query("DELETE FROM donations WHERE id = ? AND status <> 'Completed'", [req.params.id]);
+    if (result.affectedRows === 0) {
+      return res.status(409).json({ message: 'This donation was just updated by someone else. Refresh and try again.' });
+    }
+
     res.json({ message: 'Donation record removed successfully.' });
   } catch (error) {
     console.error('Delete donation error:', error);

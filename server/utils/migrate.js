@@ -31,8 +31,8 @@ async function runMigrations() {
     )
   `);
 
-  // A password is optional at the database level. Every new account gets one, and an account
-  // without one sets it through "Forgot password?" before it can log in.
+  // A password is optional at the database level. Every new account gets one; an account
+  // without one can't log in.
   // Older databases had it NOT NULL; existing hashes are kept as they are.
   const [[pwCol]] = await pool.query(
     `SELECT IS_NULLABLE FROM information_schema.COLUMNS
@@ -49,31 +49,37 @@ async function runMigrations() {
     console.log('Migration: added users.token_version');
   }
 
-  // One-time codes for sign up / login / password reset. Only an HMAC of the code is stored.
-  // For sign up, the details the user entered wait here (payload) until the email is verified.
+  // Authenticator app (TOTP) login. totp_secret is the encrypted secret (NULL = not set up yet),
+  // totp_last_step the last accepted 30s step so a code can't be used twice,
+  // mfa_failures / mfa_locked_until the lockout after too many wrong codes.
+  const mfaColumns = {
+    totp_secret: 'VARCHAR(255) DEFAULT NULL',
+    totp_last_step: 'BIGINT DEFAULT NULL',
+    mfa_failures: 'TINYINT UNSIGNED NOT NULL DEFAULT 0',
+    mfa_locked_until: 'DATETIME DEFAULT NULL'
+  };
+  for (const [column, definition] of Object.entries(mfaColumns)) {
+    if (!(await columnExists('users', column))) {
+      await pool.query(`ALTER TABLE users ADD COLUMN ${column} ${definition}`);
+      console.log(`Migration: added users.${column}`);
+    }
+  }
+
+  // One-time backup codes for a lost phone. Only an HMAC of each code is stored.
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS otp_codes (
+    CREATE TABLE IF NOT EXISTS user_backup_codes (
       id INT AUTO_INCREMENT PRIMARY KEY,
-      email VARCHAR(100) NOT NULL,
-      purpose ENUM('signup', 'login', 'reset') NOT NULL,
+      user_id INT NOT NULL,
       code_hash CHAR(64) NOT NULL,
-      payload TEXT DEFAULT NULL,
-      attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
-      expires_at DATETIME NOT NULL,
-      consumed_at DATETIME DEFAULT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      INDEX idx_otp_lookup (email, purpose, created_at)
+      used_at DATETIME DEFAULT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_backup_user (user_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
 
-  const [[purposeCol]] = await pool.query(
-    `SELECT COLUMN_TYPE FROM information_schema.COLUMNS
-     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'otp_codes' AND COLUMN_NAME = 'purpose'`
-  );
-  if (!purposeCol.COLUMN_TYPE.includes("'reset'")) {
-    await pool.query("ALTER TABLE otp_codes MODIFY purpose ENUM('signup', 'login', 'reset') NOT NULL");
-    console.log('Migration: otp_codes.purpose now allows reset');
-  }
+  // Emailed codes are no longer used
+  await pool.query('DROP TABLE IF EXISTS otp_codes');
 
   // Link donor profiles and blood requests to the account that created them
   for (const table of ['donors', 'blood_requests']) {

@@ -6,9 +6,10 @@ check stock, register to donate, request blood and track their request.
 
 Stack: React + Vite on the frontend, Node/Express for the API, MySQL for the database.
 Login uses JWT and passwords are hashed with bcrypt. Public accounts use two-factor login: a password plus a
-one-time code emailed through Gmail or [Resend](https://resend.com). Signing up also needs the emailed code to confirm the
-address, and a forgotten password can be reset with an emailed code. Icons are from [Phosphor Icons](https://phosphoricons.com)
-by Helena Zhang and Tobias Fried (MIT licence).
+6-digit code from an authenticator app (Google Authenticator or Microsoft Authenticator). You scan a QR code when
+you sign up, and a forgotten password is reset with a code from the app. If the phone is lost, a backup code works
+instead, or staff can reset the authenticator from the admin panel. The app sends no emails at all.
+Icons are from [Phosphor Icons](https://phosphoricons.com) by Helena Zhang and Tobias Fried (MIT licence).
 
 ## Database
 
@@ -17,7 +18,11 @@ Database name is `blood_bank_db`. There are 10 tables:
 - `blood_groups` - the 8 blood groups (A+, A-, B+, B-, AB+, AB-, O+, O-). Other tables point to this.
 - `admins` - staff accounts
 - `users` - public site accounts (sign up / log in). `donors.user_id` and `blood_requests.user_id` link records to the account that made them.
-- `otp_codes` - emailed one-time codes for sign up / login / password reset. Only a keyed hash of each code is stored, and codes expire after 10 minutes.
+  `totp_secret` is the authenticator app secret (stored encrypted, NULL until it's set up), `totp_last_step` stops the
+  same code being used twice, and `mfa_failures` / `mfa_locked_until` lock code entry for 15 minutes after 5 wrong codes.
+  `token_version` goes up on a password or authenticator reset, which signs out old sessions.
+- `user_backup_codes` - 8 one-time backup codes per user, for when they lose their phone. Only a keyed hash of each
+  code is stored, and `used_at` is set once a code has been used. Rows are deleted with the user.
 - `donors` - donor details, last donation date, eligibility. Age has to be 18-65.
 - `patients` - patients who need blood (hospital, doctor etc.)
 - `inventory` - one row per blood group with the number of units available
@@ -48,6 +53,7 @@ erDiagram
     BLOOD_REQUESTS ||--o| BLOOD_ISSUES : "fulfilled_by"
     USERS ||--o{ DONORS : "owns_profile"
     USERS ||--o{ BLOOD_REQUESTS : "submits"
+    USERS ||--o{ USER_BACKUP_CODES : "has"
 
     BLOOD_GROUPS {
         INT id PK
@@ -73,7 +79,20 @@ erDiagram
         VARCHAR password
         INT blood_group_id FK
         TINYINT is_active
+        INT token_version
+        VARCHAR totp_secret
+        BIGINT totp_last_step
+        TINYINT mfa_failures
+        DATETIME mfa_locked_until
         TIMESTAMP created_at
+    }
+
+    USER_BACKUP_CODES {
+        INT id PK
+        INT user_id FK
+        CHAR code_hash
+        DATETIME used_at
+        DATETIME created_at
     }
 
     DONORS {
@@ -200,21 +219,11 @@ DB_NAME=blood_bank_db
 DB_PORT=3306
 JWT_SECRET=any_random_string
 PORT=5000
-GMAIL_USER=yourname@gmail.com
-GMAIL_APP_PASSWORD=abcd efgh ijkl mnop
 ```
 
-Sign up, log in and "forgot password" send a 6-digit code by email. Two ways to send it:
-
-- **Gmail (simplest, emails anyone).** Turn on 2-Step Verification for the Google account, create an app password at
-  https://myaccount.google.com/apppasswords, and put the address and app password in `GMAIL_USER` / `GMAIL_APP_PASSWORD`.
-  Codes come from that Gmail address. Personal Gmail accounts can send about 500 emails a day.
-- **[Resend](https://resend.com)**, used when the Gmail settings are empty: set `RESEND_API_KEY`. Until you verify a domain
-  at resend.com/domains, the default `onboarding@resend.dev` sender can only deliver to the email address your Resend
-  account was registered with. With a verified domain, set `MAIL_FROM` to an address on it.
-
-If neither is set, the code is printed in the server console instead (local development only). On startup the server
-logs which one it is using, and for Gmail whether the login worked.
+`MFA_SECRET` is optional. It encrypts the authenticator secrets saved in the database, and if it's empty
+`JWT_SECRET` is used. Don't change it (or `JWT_SECRET`, if you didn't set one) once people have set up their
+authenticator, because their saved secrets can't be read any more and staff would have to reset every account.
 
 **2. Create the database**
 
@@ -233,9 +242,10 @@ mysql -u root -p < database/seed.sql
 
 Default admin login: `admin@bloodbank.com` / `admin123`
 
-If you already have the database from before, you don't need to run setup again. The server adds the
-`users` table, `user_id` columns, `users.token_version` and the `otp_codes` table by itself on startup
-(`server/utils/migrate.js`).
+If you already have the database from before, you don't need to run setup again. On startup the server adds the
+`users` table, `user_id` columns, the new `users` columns (`token_version`, `totp_secret`, `totp_last_step`,
+`mfa_failures`, `mfa_locked_until`) and the `user_backup_codes` table, and drops the old `otp_codes` table
+(`server/utils/migrate.js`). Existing accounts set up their authenticator app at their next login.
 
 **3. Start the backend**
 
@@ -261,12 +271,35 @@ Open http://localhost:5173.
 - Public site: `/home`, `/availability`, and (after logging in) `/donate`, `/request-blood`, `/track`
 - Public accounts: `/signup`, `/account`, `/reset-password` (forgot or change password)
 - Admin panel: `/admin`, `/admin/donors`, `/admin/donations`, `/admin/patients`,
-  `/admin/requests`, `/admin/issues`
+  `/admin/requests`, `/admin/issues`, `/admin/accounts`
 
 From the project root you can also run `npm run dev:server` and `npm run dev:client`.
 
 The helpline number, email and address on the public site can be changed in
 `client/src/config/site.js`.
+
+## Two-factor login
+
+**For users**
+
+1. Install **Google Authenticator** or **Microsoft Authenticator** on your phone.
+2. When you sign up, the site shows a QR code. In the app tap **+**, scan it, and type the 6-digit code the app shows.
+   If you can't scan, type the key shown under the QR code into the app instead.
+   Accounts made before this change are asked to do the same thing after their password at their next login.
+3. You then get 8 backup codes (like `ABCD-EFGH`). Save them somewhere safe, you only see them once. Each one works once.
+4. After that, every login is your password plus the current code from the app.
+
+Lost your phone? Type a backup code instead of the app code (on the login page or the forgot password page).
+You can get a fresh set of backup codes from the Account page. If you have no backup codes left, ask the blood bank staff
+to reset your authenticator, then set it up again at your next login.
+
+5 wrong codes in a row block code entry for 15 minutes.
+
+**For staff**
+
+If a user has lost their phone and their backup codes, go to **Admin panel -> Accounts**, find the user and click
+**Reset authenticator**. This removes their authenticator and backup codes and signs them out. At their next login they
+enter their password and scan a new QR code. Staff (admin) login itself is still email + password only.
 
 ## API
 
@@ -288,20 +321,27 @@ Public
 - `POST /api/public/blood-request` - needs user token. Creates a patient + pending request linked to that account
 
 Users (public accounts)
-- `POST /api/users/signup/request-otp` - `{ full_name, email, phone, password, blood_group_id }`. Emails a code;
-  nothing is created until the code is verified.
-- `POST /api/users/signup/verify` - `{ email, code }`. Creates the account and returns the user token.
+- `POST /api/users/signup` - `{ full_name, email, phone, password, blood_group_id }`. Checks the details and returns
+  a `setup_token` plus the QR code / key to scan. Nothing is saved yet.
+- `POST /api/users/signup/verify` - `{ setup_token, code }`. Checks the app code, creates the account and returns the
+  user token and the 8 backup codes. The setup token lasts 10 minutes.
 - `POST /api/users/login` - `{ identifier, password }`, identifier is email or phone. Step 1 of 2: a correct password
-  doesn't return a token, it emails a login code and returns the (masked) address it went to. Call it again to resend.
-- `POST /api/users/login/verify` - `{ identifier, code }`. Step 2 of 2: returns the user token.
+  doesn't return a session token, it returns `{ stage: 'verify', mfa_token }`, or `{ stage: 'setup', mfa_token, setup }`
+  with a QR code if the account has no authenticator yet. The `mfa_token` lasts 5 minutes.
+- `POST /api/users/login/verify` - `{ mfa_token, code }`. Step 2 of 2: the app code (or a backup code) returns the user
+  token. For the setup stage it also saves the authenticator and returns the backup codes.
+- `POST /api/users/password/reset` - `{ identifier, code, password }`. Needs an app code or backup code. Sets the new
+  password, signs out every other session for the account and returns a new user token.
+- `POST /api/users/mfa/backup-codes` - needs user token, `{ code }` (current app code). Replaces the backup codes and returns the new ones.
+- `GET /api/users/me` - needs user token. Returns the profile, own donor profile, donations, requests and
+  `backup_codes_left`. The Track page uses this, so a user only ever sees records linked to their own account.
 
-Codes last 10 minutes, allow 5 wrong tries, and a new one can be requested after 60 seconds (max 5 per hour per email).
-Login codes are only sent after the right password, so logging in always needs both the password and the inbox.
-- `POST /api/users/password/request-otp` - `{ email }`. Emails a password reset code if the account exists. The response is the same either way.
-- `POST /api/users/password/reset` - `{ email, code, password }`. Sets the new password, signs out every other
-  session for the account and returns a new user token.
-- `GET /api/users/me` - needs user token. Returns the profile, own donor profile, donations and requests.
-  The Track page uses this, so a user only ever sees records linked to their own account.
+App codes are 6 digits and change every 30 seconds, and each one can only be used once. 5 wrong codes in a row lock
+code entry for 15 minutes.
+
+Accounts *
+- `GET /api/accounts?search=` - public accounts, with whether they have an authenticator and how many backup codes are left
+- `POST /api/accounts/:id/reset-authenticator` - removes the user's authenticator and backup codes and signs them out
 
 Inventory
 - `GET /api/inventory`
@@ -336,7 +376,8 @@ Dashboard
 client/                 React frontend (Vite)
   src/
     components/         AdminLayout, PublicLayout, modals, BloodTag, SearchInput,
-                        ProtectedRoute (admin pages) and RequireUser (account-only public pages)
+                        ProtectedRoute (admin pages) and RequireUser (account-only public pages),
+                        AuthenticatorSetup, CodeStep, BackupCodes (two-factor login screens)
     config/site.js      helpline, address etc. shown on the public site
     context/            toast notifications
     hooks/              useAuth (staff session), useUserAuth (public accounts)
@@ -344,7 +385,7 @@ client/                 React frontend (Vite)
       LandingPage.jsx   landing + login for both users and staff
       ResetPasswordPage.jsx  forgot / change password for public accounts
       public/           home, blood stock, donate, request, track, signup, account
-      admin/            dashboard, donors, donations, patients, requests, issues
+      admin/            dashboard, donors, donations, patients, requests, issues, accounts
     services/api.js     axios instance, attaches the right token and ends a session on 401
     services/session.js saved logins (localStorage), drops expired ones, syncs across tabs
     utils/dates.js      today's date in the user's time zone, for date inputs
@@ -358,8 +399,7 @@ server/                 Express API
   utils/migrate.js      small schema updates that run on startup
   utils/tokens.js       signs / reads login tokens
   utils/passwords.js    password rules, hashing and checking
-  utils/otp.js          creates / checks one-time codes
-  utils/mailer.js       sends the code email through Gmail or Resend
+  utils/totp.js         authenticator secrets (encrypted), QR codes, code checks, backup codes, lockout
   utils/dates.js        local calendar dates (YYYY-MM-DD) and date checks
   server.js
 database/               schema.sql, seed.sql

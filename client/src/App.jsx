@@ -27,6 +27,7 @@ import DonationsPage from './pages/admin/DonationsPage';
 import PatientsPage from './pages/admin/PatientsPage';
 import RequestsPage from './pages/admin/RequestsPage';
 import IssuesPage from './pages/admin/IssuesPage';
+import AccountsPage from './pages/admin/AccountsPage';
 
 function App() {
   return (
@@ -72,6 +73,7 @@ function App() {
                 <Route path="patients" element={<PatientsPage />} />
                 <Route path="requests" element={<RequestsPage />} />
                 <Route path="issues" element={<IssuesPage />} />
+                <Route path="accounts" element={<AccountsPage />} />
                 <Route path="*" element={<Navigate to="/admin" replace />} />
               </Route>
 

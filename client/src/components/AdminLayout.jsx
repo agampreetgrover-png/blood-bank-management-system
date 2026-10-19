@@ -9,7 +9,8 @@ const NAV_ITEMS = [
   { to: '/admin/donations', label: 'Donations' },
   { to: '/admin/patients', label: 'Patients' },
   { to: '/admin/requests', label: 'Requests' },
-  { to: '/admin/issues', label: 'Dispensation' }
+  { to: '/admin/issues', label: 'Dispensation' },
+  { to: '/admin/accounts', label: 'Accounts' }
 ];
 
 function AdminLayout() {

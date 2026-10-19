@@ -1,88 +1,64 @@
 import { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { today } from '../../utils/dates';
+import { useBloodGroups, useFilteredList } from '../../hooks/useAdminData';
 import Modal from '../../components/Modal';
 import SearchInput from '../../components/SearchInput';
 import ConfirmModal from '../../components/ConfirmModal';
 import { useToast } from '../../context/ToastContext';
 
+const emptyForm = () => ({
+  patient_id: '',
+  blood_group_id: '',
+  units_required: 1,
+  hospital: '',
+  request_date: today(),
+  urgency: 'Normal',
+  notes: ''
+});
+
 function RequestsPage() {
-  const [requests, setRequests] = useState([]);
-  const [patients, setPatients] = useState([]);
-  const [bloodGroups, setBloodGroups] = useState([]);
-  const [inventory, setInventory] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const bloodGroups = useBloodGroups();
+  const [patients, setPatients] = useState([]);
+  const [inventory, setInventory] = useState([]);
+  const { items: requests, loading, reload: fetchRequests } = useFilteredList(
+    '/requests',
+    { search: search.trim(), status: filterStatus },
+    'Could not load blood requests'
+  );
 
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showIssueModal, setShowIssueModal] = useState(false);
-  const [activeRequest, setActiveRequest] = useState(null);
+  const [activeRequest, setActiveRequest] = useState(null); // request being dispensed
+  const [cancelId, setCancelId] = useState(null);
 
-  const [confirmDelete, setConfirmDelete] = useState({
-    isOpen: false,
-    requestId: null
-  });
-
-  const [formData, setFormData] = useState({
-    patient_id: '',
-    blood_group_id: '',
-    units_required: 1,
-    hospital: '',
-    request_date: today(),
-    urgency: 'Normal',
-    notes: ''
-  });
-
+  const [formData, setFormData] = useState(emptyForm);
   const [issueDate, setIssueDate] = useState(today());
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const { showToast } = useToast();
 
+  const setField = (name) => (e) => setFormData((prev) => ({ ...prev, [name]: e.target.value }));
+
+  // Active patients for the request form
   useEffect(() => {
-    fetchBloodGroups();
-    fetchPatients();
-    fetchInventory();
+    api.get('/patients', { params: { status: 'active' } })
+      .then((res) => setPatients(res.data))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => fetchRequests(), 250);
-    return () => clearTimeout(timer);
-  }, [search, filterStatus]);
-
-  const fetchRequests = async () => {
-    try {
-      const params = {};
-      if (search.trim()) params.search = search.trim();
-      if (filterStatus) params.status = filterStatus;
-      const res = await api.get('/requests', { params });
-      setRequests(res.data);
-    } catch (err) {
-      showToast('Could not load blood requests', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchPatients = async () => {
-    try {
-      const res = await api.get('/patients', { params: { status: 'active' } });
-      setPatients(res.data);
-    } catch (err) {}
-  };
-
-  const fetchBloodGroups = async () => {
-    try {
-      const res = await api.get('/dashboard/blood-groups');
-      setBloodGroups(res.data);
-    } catch (err) {}
-  };
+    fetchInventory();
+  }, []);
 
   const fetchInventory = async () => {
     try {
       const res = await api.get('/inventory');
       setInventory(res.data);
-    } catch (err) {}
+    } catch {
+      // the stock column then reads 0 and Dispense stays disabled
+    }
   };
 
   const getAvailableStock = (bgId) => {
@@ -91,15 +67,7 @@ function RequestsPage() {
   };
 
   const openCreateModal = () => {
-    setFormData({
-      patient_id: '',
-      blood_group_id: '',
-      units_required: 1,
-      hospital: '',
-      request_date: today(),
-      urgency: 'Normal',
-      notes: ''
-    });
+    setFormData(emptyForm());
     setFormError('');
     setShowCreateModal(true);
   };
@@ -151,7 +119,6 @@ function RequestsPage() {
     setActiveRequest(r);
     setIssueDate(today());
     setFormError('');
-    setShowIssueModal(true);
     fetchInventory();
   };
 
@@ -175,7 +142,7 @@ function RequestsPage() {
         issue_date: issueDate
       });
       showToast('Blood units successfully dispensed', 'success');
-      setShowIssueModal(false);
+      setActiveRequest(null);
       fetchRequests();
       fetchInventory();
     } catch (err) {
@@ -187,11 +154,11 @@ function RequestsPage() {
 
   const executeDelete = async () => {
     try {
-      await api.delete(`/requests/${confirmDelete.requestId}`);
+      await api.delete(`/requests/${cancelId}`);
       showToast('Request canceled', 'info');
-      setConfirmDelete({ isOpen: false, requestId: null });
+      setCancelId(null);
       fetchRequests();
-    } catch (err) {
+    } catch {
       showToast('Could not delete request', 'error');
     }
   };
@@ -215,10 +182,9 @@ function RequestsPage() {
           onClear={() => setSearch('')}
         />
         <select
-          className="form-control"
+          className="form-control filter-select"
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
-          style={{ width: 'auto', minWidth: 140 }}
         >
           <option value="">All Statuses</option>
           <option value="Pending">Pending</option>
@@ -241,7 +207,6 @@ function RequestsPage() {
               <button
                 type="button"
                 className="btn btn-sm btn-secondary"
-                style={{ marginTop: 10 }}
                 onClick={() => {
                   setSearch('');
                   setFilterStatus('');
@@ -256,7 +221,6 @@ function RequestsPage() {
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
-                style={{ marginTop: 10 }}
                 onClick={openCreateModal}
               >
                 + New Request
@@ -266,7 +230,7 @@ function RequestsPage() {
         </div>
       ) : (
         <div className="card">
-          <div className="card-body" style={{ padding: 0 }}>
+          <div className="card-body">
             <div className="table-container">
               <table>
                 <thead>
@@ -304,13 +268,7 @@ function RequestsPage() {
                           </span>
                         </td>
                         <td>
-                          <span
-                            className="stock-reserve-indicator"
-                            style={{
-                              color: canIssue ? 'var(--text)' : 'var(--danger)',
-                              fontWeight: canIssue ? 'normal' : '600'
-                            }}
-                          >
+                          <span className={`stock-reserve-indicator${canIssue ? '' : ' stock-reserve-short'}`}>
                             <span className={`status-dot ${canIssue ? 'dot-green' : 'dot-red'}`} aria-hidden="true"></span>
                             <span>{stock} in stock</span>
                           </span>
@@ -329,13 +287,13 @@ function RequestsPage() {
                                 </button>
                                 <button
                                   className="btn btn-sm btn-danger-text"
-                                  onClick={() => setConfirmDelete({ isOpen: true, requestId: r.id })}
+                                  onClick={() => setCancelId(r.id)}
                                 >
                                   Cancel
                                 </button>
                               </>
                             ) : (
-                              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>—</span>
+                              <span className="cell-note">—</span>
                             )}
                           </div>
                         </td>
@@ -383,7 +341,7 @@ function RequestsPage() {
                 <select
                   className="form-control"
                   value={formData.blood_group_id}
-                  onChange={(e) => setFormData({ ...formData, blood_group_id: e.target.value })}
+                  onChange={setField('blood_group_id')}
                   required
                 >
                   <option value="">Select group</option>
@@ -400,7 +358,7 @@ function RequestsPage() {
                   min="1"
                   max="10"
                   value={formData.units_required}
-                  onChange={(e) => setFormData({ ...formData, units_required: e.target.value })}
+                  onChange={setField('units_required')}
                   required
                 />
               </div>
@@ -414,7 +372,7 @@ function RequestsPage() {
                   className="form-control"
                   placeholder="e.g. Apollo Hospital"
                   value={formData.hospital}
-                  onChange={(e) => setFormData({ ...formData, hospital: e.target.value })}
+                  onChange={setField('hospital')}
                   required
                 />
               </div>
@@ -423,7 +381,7 @@ function RequestsPage() {
                 <select
                   className="form-control"
                   value={formData.urgency}
-                  onChange={(e) => setFormData({ ...formData, urgency: e.target.value })}
+                  onChange={setField('urgency')}
                 >
                   <option value="Normal">Normal</option>
                   <option value="Urgent">Urgent</option>
@@ -451,8 +409,8 @@ function RequestsPage() {
 
       {/* Dispense Modal */}
       <Modal
-        isOpen={showIssueModal && !!activeRequest}
-        onClose={() => !submitting && setShowIssueModal(false)}
+        isOpen={Boolean(activeRequest)}
+        onClose={() => !submitting && setActiveRequest(null)}
         title={`Fulfill Requisition #${activeRequest?.id || ''}`}
       >
         {activeRequest && (
@@ -463,7 +421,7 @@ function RequestsPage() {
               <div className="summary-banner">
                 <p>
                   Dispensing <strong>{activeRequest.units_required} unit(s)</strong> of{' '}
-                  <strong style={{ color: 'var(--primary)' }}>{activeRequest.blood_group}</strong> for{' '}
+                  <strong>{activeRequest.blood_group}</strong> for{' '}
                   <strong>{activeRequest.patient_name}</strong> at <em>{activeRequest.hospital}</em>.
                 </p>
               </div>
@@ -485,7 +443,7 @@ function RequestsPage() {
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={() => setShowIssueModal(false)}
+                onClick={() => setActiveRequest(null)}
                 disabled={submitting}
               >
                 Cancel
@@ -499,12 +457,12 @@ function RequestsPage() {
       </Modal>
 
       <ConfirmModal
-        isOpen={confirmDelete.isOpen}
+        isOpen={cancelId !== null}
         title="Cancel Request"
         message="Are you sure you want to cancel this blood requisition?"
         confirmText="Cancel Request"
         onConfirm={executeDelete}
-        onClose={() => setConfirmDelete({ isOpen: false, requestId: null })}
+        onClose={() => setCancelId(null)}
       />
     </div>
   );

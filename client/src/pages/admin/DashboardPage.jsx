@@ -17,7 +17,7 @@ function DashboardPage() {
       setError('');
       const res = await api.get('/dashboard/stats');
       setData(res.data);
-    } catch (err) {
+    } catch {
       setError('Unable to load dashboard data. Please check your connection.');
     } finally {
       setLoading(false);
@@ -60,7 +60,7 @@ function DashboardPage() {
       </p>
 
       {/* Live Blood Stock */}
-      <div id="inventory" className="card" style={{ marginBottom: 24 }}>
+      <div id="inventory" className="card dashboard-stock">
         <div className="card-header">
           <h3>Blood stock</h3>
         </div>
@@ -108,7 +108,7 @@ function DashboardPage() {
             <h3>Recent donations</h3>
             <Link to="/admin/donations" className="card-link">View all</Link>
           </div>
-          <div className="card-body" style={{ padding: 0 }}>
+          <div className="card-body">
             {recentDonations.length === 0 ? (
               <p className="empty-table-text">No donations logged recently.</p>
             ) : (
@@ -143,7 +143,7 @@ function DashboardPage() {
             <h3>Recent requests</h3>
             <Link to="/admin/requests" className="card-link">View all</Link>
           </div>
-          <div className="card-body" style={{ padding: 0 }}>
+          <div className="card-body">
             {recentRequests.length === 0 ? (
               <p className="empty-table-text">No requests submitted yet.</p>
             ) : (

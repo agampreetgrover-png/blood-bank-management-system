@@ -1,9 +1,24 @@
 const { pool } = require('../config/db');
+const { PHONE_RE } = require('../utils/validation');
 
 // Age 0 (a newborn) is valid, so a missing age can't be tested with !age
 const hasAge = (age) => age !== undefined && age !== null && age !== '';
 // Whole numbers only: Number(' ') and Number(true) would otherwise pass as 0 and 1
 const validAge = (age) => /^\d+$/.test(String(age)) && Number(age) <= 120;
+
+// Checks shared by create and update. Message for the first problem found, or null.
+function patientProblem({ full_name, age, gender, blood_group_id, hospital, phone }) {
+  if (!full_name || !hasAge(age) || !gender || !blood_group_id || !hospital || !phone) {
+    return 'Full name, age, gender, blood group, hospital, and phone are required.';
+  }
+  if (!validAge(age)) {
+    return 'Please provide a valid age.';
+  }
+  if (!PHONE_RE.test(phone)) {
+    return 'Phone number must be exactly 10 digits.';
+  }
+  return null;
+}
 
 // GET /api/patients
 async function getAllPatients(req, res) {
@@ -71,16 +86,9 @@ async function createPatient(req, res) {
   try {
     const { full_name, age, gender, blood_group_id, hospital, doctor_name, phone, address } = req.body;
 
-    if (!full_name || !hasAge(age) || !gender || !blood_group_id || !hospital || !phone) {
-      return res.status(400).json({ message: 'Full name, age, gender, blood group, hospital, and phone are required.' });
-    }
-
-    if (!validAge(age)) {
-      return res.status(400).json({ message: 'Please provide a valid age.' });
-    }
-
-    if (!/^\d{10}$/.test(phone)) {
-      return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' });
+    const problem = patientProblem(req.body);
+    if (problem) {
+      return res.status(400).json({ message: problem });
     }
 
     // Verify blood group
@@ -107,16 +115,9 @@ async function updatePatient(req, res) {
   try {
     const { full_name, age, gender, blood_group_id, hospital, doctor_name, phone, address, is_active } = req.body;
 
-    if (!full_name || !hasAge(age) || !gender || !blood_group_id || !hospital || !phone) {
-      return res.status(400).json({ message: 'Full name, age, gender, blood group, hospital, and phone are required.' });
-    }
-
-    if (!validAge(age)) {
-      return res.status(400).json({ message: 'Please provide a valid age.' });
-    }
-
-    if (!/^\d{10}$/.test(phone)) {
-      return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' });
+    const problem = patientProblem(req.body);
+    if (problem) {
+      return res.status(400).json({ message: problem });
     }
 
     // The admin form doesn't send doctor, address or the active flag, so values left out are kept as they are
