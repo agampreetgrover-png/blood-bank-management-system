@@ -1,5 +1,5 @@
 import { X } from '@phosphor-icons/react';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 function ConfirmModal({
   isOpen,
@@ -12,6 +12,19 @@ function ConfirmModal({
   onClose,
   loading = false
 }) {
+  const confirming = useRef(false);
+
+  // Repeat clicks are ignored until the previous onConfirm has settled, so the action is never sent twice
+  const handleConfirm = async () => {
+    if (confirming.current) return;
+    confirming.current = true;
+    try {
+      await onConfirm();
+    } finally {
+      confirming.current = false;
+    }
+  };
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -70,7 +83,7 @@ function ConfirmModal({
           <button
             type="button"
             className={`btn btn-${confirmVariant === 'danger' ? 'danger-fill' : 'primary'}`}
-            onClick={onConfirm}
+            onClick={handleConfirm}
             disabled={loading}
           >
             {loading ? 'Working…' : confirmText}

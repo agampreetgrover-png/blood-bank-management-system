@@ -16,6 +16,11 @@ const canReceiveFrom = {
   'O-': ['O-']
 };
 
+const statusClass = (item) => (
+  item.available_units === 0 ? 'out' : item.status === 'Available' ? 'ok' : 'low'
+);
+const statusLabel = { ok: 'In stock', low: 'Running low', out: 'Out of stock' };
+
 function BloodAvailabilityPage() {
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -29,15 +34,9 @@ function BloodAvailabilityPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const itemFor = (group) => inventory.find((i) => i.blood_group === group);
+  const unitsOf = (group) => inventory.find((i) => i.blood_group === group)?.available_units ?? 0;
   const compatible = selected ? canReceiveFrom[selected] : [];
-  const compatibleTotal = compatible.reduce((sum, g) => sum + (itemFor(g)?.available_units ?? 0), 0);
-
-
-  const statusClass = (item) => (
-    item.available_units === 0 ? 'out' : item.status === 'Available' ? 'ok' : 'low'
-  );
-  const statusLabel = { ok: 'In stock', low: 'Running low', out: 'Out of stock' };
+  const compatibleTotal = compatible.reduce((sum, g) => sum + unitsOf(g), 0);
 
   return (
     <div className="pub-container pub-page">
@@ -86,16 +85,9 @@ function BloodAvailabilityPage() {
             <div className="pub-compat-box">
               <h2>{selected} can receive blood from</h2>
               <div className="pub-compat-list">
-                {compatible.map((g) => {
-                  const item = itemFor(g);
-                  return (
-                    <BloodTag
-                      key={g}
-                      group={g}
-                      units={item?.available_units ?? 0}
-                    />
-                  );
-                })}
+                {compatible.map((g) => (
+                  <BloodTag key={g} group={g} units={unitsOf(g)} />
+                ))}
               </div>
               <p><strong>{compatibleTotal} {compatibleTotal === 1 ? 'unit' : 'units'}</strong> available across these groups</p>
               <Link to="/request-blood" className="btn btn-primary">Request {selected} blood</Link>

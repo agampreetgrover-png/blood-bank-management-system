@@ -1,6 +1,6 @@
 const { pool } = require('../config/db');
+const { URGENCIES } = require('../utils/validation');
 
-const URGENCIES = ['Normal', 'Urgent', 'Critical'];
 // 'Fulfilled' is only set by issuing blood (POST /api/issues), so stock always matches what was given out
 const EDITABLE_STATUSES = ['Pending', 'Approved', 'Rejected'];
 const validUnits = (units) => Number.isInteger(Number(units)) && units >= 1 && units <= 10;
@@ -51,7 +51,7 @@ async function getAllRequests(req, res) {
       params.push(end_date);
     }
 
-    query += ' ORDER BY FIELD(br.urgency, "Critical", "Urgent", "Normal"), br.created_at DESC';
+    query += " ORDER BY FIELD(br.urgency, 'Critical', 'Urgent', 'Normal'), br.created_at DESC";
 
     const [rows] = await pool.query(query, params);
     res.json(rows);
@@ -214,7 +214,7 @@ async function deleteRequest(req, res) {
       return res.status(400).json({ message: 'Cannot delete a fulfilled request.' });
     }
 
-    const [result] = await pool.query('DELETE FROM blood_requests WHERE id = ?', [req.params.id]);
+    await pool.query('DELETE FROM blood_requests WHERE id = ?', [req.params.id]);
 
     res.json({ message: 'Blood request deleted successfully.' });
   } catch (error) {

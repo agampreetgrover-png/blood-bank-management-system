@@ -7,7 +7,8 @@ CREATE DATABASE IF NOT EXISTS blood_bank_db;
 USE blood_bank_db;
 
 SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS blood_issues, blood_requests, donations, inventory, patients, donors, otp_codes, users, admins, blood_groups;
+-- otp_codes is no longer used, but is still dropped here so older databases get cleaned up
+DROP TABLE IF EXISTS blood_issues, blood_requests, donations, inventory, patients, donors, user_backup_codes, otp_codes, users, admins, blood_groups;
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- ============================================
@@ -44,31 +45,32 @@ CREATE TABLE users (
     full_name VARCHAR(150) NOT NULL,
     email VARCHAR(100) NOT NULL UNIQUE,
     phone VARCHAR(15) NOT NULL UNIQUE,
-    password VARCHAR(255) DEFAULT NULL,  -- bcrypt hash; login needs it plus an emailed code
+    password VARCHAR(255) DEFAULT NULL,  -- bcrypt hash; login needs it plus an authenticator code
     blood_group_id INT DEFAULT NULL,
     is_active TINYINT(1) DEFAULT 1,
-    token_version INT NOT NULL DEFAULT 0,  -- raised on password reset, which signs out older sessions
+    token_version INT NOT NULL DEFAULT 0,  -- raised on password / authenticator reset, which signs out older sessions
+    totp_secret VARCHAR(255) DEFAULT NULL,  -- encrypted authenticator app secret; NULL = not set up yet
+    totp_last_step BIGINT DEFAULT NULL,  -- last accepted 30s time step, so the same code can't be used twice
+    mfa_failures TINYINT UNSIGNED NOT NULL DEFAULT 0,  -- wrong codes in a row; 5 locks the account for 15 minutes
+    mfa_locked_until DATETIME DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (blood_group_id) REFERENCES blood_groups(id)
 );
 
 -- ============================================
--- Table: otp_codes
--- One-time sign up / login / password reset codes (only an HMAC of the code is stored).
--- For sign up, payload holds the details entered until the email is verified.
+-- Table: user_backup_codes
+-- Backup codes for when a user loses their phone (8 per user, each works once).
+-- Only an HMAC of each code is stored; used_at is set when a code is used.
 -- ============================================
-CREATE TABLE otp_codes (
+CREATE TABLE user_backup_codes (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    email VARCHAR(100) NOT NULL,
-    purpose ENUM('signup', 'login', 'reset') NOT NULL,
+    user_id INT NOT NULL,
     code_hash CHAR(64) NOT NULL,
-    payload TEXT DEFAULT NULL,
-    attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
-    expires_at DATETIME NOT NULL,
-    consumed_at DATETIME DEFAULT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_otp_lookup (email, purpose, created_at)
+    used_at DATETIME DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_backup_codes_user (user_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- ============================================

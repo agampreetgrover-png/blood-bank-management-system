@@ -105,7 +105,7 @@ async function getDashboardStats(req, res) {
   }
 }
 
-// GET /api/blood-groups
+// GET /api/dashboard/blood-groups
 async function getBloodGroups(req, res) {
   try {
     const [rows] = await pool.query('SELECT id, group_name FROM blood_groups ORDER BY id ASC');

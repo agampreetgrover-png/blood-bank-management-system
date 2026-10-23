@@ -1,6 +1,6 @@
 const rateLimit = require('express-rate-limit');
 
-// Per-IP cap over a 15 minute window, on top of the per-email limits in utils/otp.js
+// Per-IP cap over a 15 minute window, on top of the per-account wrong-code lockout in utils/totp.js
 function limiter(limit, options = {}) {
   return rateLimit({
     windowMs: 15 * 60 * 1000,

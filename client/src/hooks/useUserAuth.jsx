@@ -26,40 +26,45 @@ export function UserAuthProvider({ children }) {
     return data;
   };
 
-  // Sign up, login and password reset all email a code first. These request calls resolve to
-  // { email, resend_in, expires_in } - seconds before another code can be sent, and before this one expires.
-  const requestSignupOtp = async (details) => {
-    const response = await api.post('/users/signup/request-otp', details);
+  // Every login needs the 6-digit code from the person's authenticator app.
+  // The calls that can hand out backup codes return the data without starting the session: the page
+  // shows the codes first and calls startSession(data) once the person has saved them.
+
+  // Sign up step 1: checks the details and resolves to { setup_token, setup: { secret, qr } } to scan
+  const startSignup = async (details) => {
+    const response = await api.post('/users/signup', details);
     return response.data;
   };
 
-  // Creates the account
-  const verifySignup = async (email, code) => {
-    const response = await api.post('/users/signup/verify', { email, code });
-    return startSession(response.data);
+  // Sign up step 2: the first code from the app creates the account. Resolves to { token, user, backup_codes }.
+  const finishSignup = async (setupToken, code) => {
+    const response = await api.post('/users/signup/verify', { setup_token: setupToken, code });
+    return response.data;
   };
 
-  // Login is two-factor: the right password emails a code (email comes back masked), then verifyLogin
-  // with that code starts the session. Calling login again sends a fresh code.
+  // Right password -> { stage: 'verify', mfa_token } (ask for a code), or { stage: 'setup', mfa_token, setup }
+  // for an account that has no authenticator yet
   const login = async (identifier, password) => {
     const response = await api.post('/users/login', { identifier, password });
     return response.data;
   };
 
-  const verifyLogin = async (identifier, code) => {
-    const response = await api.post('/users/login/verify', { identifier, code });
-    return startSession(response.data);
-  };
-
-  const requestResetOtp = async (email) => {
-    const response = await api.post('/users/password/request-otp', { email });
+  // Resolves to { token, user, backup_codes_left }, or { token, user, backup_codes } after a first setup
+  const verifyLogin = async (mfaToken, code) => {
+    const response = await api.post('/users/login/verify', { mfa_token: mfaToken, code });
     return response.data;
   };
 
-  // Sets a new password, signs out every other session and logs in here
-  const resetPassword = async (email, code, password) => {
-    const response = await api.post('/users/password/reset', { email, code, password });
+  // Sets a new password with an authenticator or backup code, signs out every other session and logs in here
+  const resetPassword = async (identifier, code, password) => {
+    const response = await api.post('/users/password/reset', { identifier, code, password });
     return startSession(response.data);
+  };
+
+  // Replaces the backup codes (needs a current code from the app) and resolves to the new list
+  const regenerateBackupCodes = async (code) => {
+    const response = await api.post('/users/mfa/backup-codes', { code });
+    return response.data.backup_codes;
   };
 
   const logout = () => clearSession('user');
@@ -68,12 +73,13 @@ export function UserAuthProvider({ children }) {
     <UserAuthContext.Provider
       value={{
         user,
-        requestSignupOtp,
-        verifySignup,
+        startSignup,
+        finishSignup,
         login,
         verifyLogin,
-        requestResetOtp,
         resetPassword,
+        regenerateBackupCodes,
+        startSession,
         logout,
         isLoggedIn: !!user
       }}

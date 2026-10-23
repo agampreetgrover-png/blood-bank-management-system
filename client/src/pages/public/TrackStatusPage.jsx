@@ -2,11 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import { useToast } from '../../context/ToastContext';
-
-const formatDate = (value) => (value
-  ? new Date(value).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-  : '');
-const pillClass = (status) => `status-pill pill-${String(status).toLowerCase().replace(' ', '-')}`;
+import { formatDate, pillClass } from '../../utils/format';
 
 // Shows only the logged-in user's own requests and bookings. The server filters by
 // account, so there is no way to look up someone else's record from here.

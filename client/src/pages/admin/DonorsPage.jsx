@@ -1,82 +1,45 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import api from '../../services/api';
+import { useBloodGroups, useFilteredList } from '../../hooks/useAdminData';
 import Modal from '../../components/Modal';
 import SearchInput from '../../components/SearchInput';
 import ConfirmModal from '../../components/ConfirmModal';
 import { useToast } from '../../context/ToastContext';
 
+const EMPTY_FORM = {
+  full_name: '',
+  age: '',
+  gender: 'Male',
+  blood_group_id: '',
+  phone: '',
+  email: '',
+  address: ''
+};
+
 function DonorsPage() {
-  const [donors, setDonors] = useState([]);
-  const [bloodGroups, setBloodGroups] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterBG, setFilterBG] = useState('');
+  const bloodGroups = useBloodGroups();
+  const { items: donors, loading, reload: fetchDonors } = useFilteredList(
+    '/donors',
+    { search: search.trim(), blood_group: filterBG },
+    'Could not load donors'
+  );
 
   const [showModal, setShowModal] = useState(false);
   const [editingDonor, setEditingDonor] = useState(null);
+  const [deactivateTarget, setDeactivateTarget] = useState(null);
 
-  const [confirmDelete, setConfirmDelete] = useState({
-    isOpen: false,
-    donorId: null,
-    donorName: ''
-  });
-
-  const [formData, setFormData] = useState({
-    full_name: '',
-    age: '',
-    gender: 'Male',
-    blood_group_id: '',
-    phone: '',
-    email: '',
-    address: ''
-  });
-
+  const [formData, setFormData] = useState(EMPTY_FORM);
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const { showToast } = useToast();
 
-  useEffect(() => {
-    fetchBloodGroups();
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => fetchDonors(), 250);
-    return () => clearTimeout(timer);
-  }, [search, filterBG]);
-
-  const fetchBloodGroups = async () => {
-    try {
-      const res = await api.get('/dashboard/blood-groups');
-      setBloodGroups(res.data);
-    } catch (err) {}
-  };
-
-  const fetchDonors = async () => {
-    try {
-      const params = {};
-      if (search.trim()) params.search = search.trim();
-      if (filterBG) params.blood_group = filterBG;
-
-      const res = await api.get('/donors', { params });
-      setDonors(res.data);
-    } catch (err) {
-      showToast('Could not load donors', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const setField = (name) => (e) => setFormData((prev) => ({ ...prev, [name]: e.target.value }));
 
   const openAddModal = () => {
     setEditingDonor(null);
-    setFormData({
-      full_name: '',
-      age: '',
-      gender: 'Male',
-      blood_group_id: '',
-      phone: '',
-      email: '',
-      address: ''
-    });
+    setFormData(EMPTY_FORM);
     setFormError('');
     setShowModal(true);
   };
@@ -149,11 +112,11 @@ function DonorsPage() {
 
   const executeDelete = async () => {
     try {
-      await api.delete(`/donors/${confirmDelete.donorId}`);
+      await api.delete(`/donors/${deactivateTarget.id}`);
       showToast('Donor marked as inactive', 'info');
-      setConfirmDelete({ isOpen: false, donorId: null, donorName: '' });
+      setDeactivateTarget(null);
       fetchDonors();
-    } catch (err) {
+    } catch {
       showToast('Action failed', 'error');
     }
   };
@@ -172,7 +135,7 @@ function DonorsPage() {
       });
       showToast('Donor profile reactivated', 'success');
       fetchDonors();
-    } catch (err) {
+    } catch {
       showToast('Could not reactivate donor', 'error');
     }
   };
@@ -197,10 +160,9 @@ function DonorsPage() {
           onClear={() => setSearch('')}
         />
         <select
-          className="form-control"
+          className="form-control filter-select"
           value={filterBG}
           onChange={(e) => setFilterBG(e.target.value)}
-          style={{ width: 'auto', minWidth: 140 }}
         >
           <option value="">All Blood Groups</option>
           {bloodGroups.map((bg) => (
@@ -224,7 +186,6 @@ function DonorsPage() {
               <button
                 type="button"
                 className="btn btn-sm btn-secondary"
-                style={{ marginTop: 10 }}
                 onClick={() => {
                   setSearch('');
                   setFilterBG('');
@@ -239,7 +200,6 @@ function DonorsPage() {
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
-                style={{ marginTop: 10 }}
                 onClick={openAddModal}
               >
                 + Register First Donor
@@ -249,7 +209,7 @@ function DonorsPage() {
         </div>
       ) : (
         <div className="card">
-          <div className="card-body" style={{ padding: 0 }}>
+          <div className="card-body">
             <div className="table-container">
               <table>
                 <thead>
@@ -284,7 +244,7 @@ function DonorsPage() {
                           {d.is_active ? (
                             <button
                               className="btn btn-sm btn-danger-text"
-                              onClick={() => setConfirmDelete({ isOpen: true, donorId: d.id, donorName: d.full_name })}
+                              onClick={() => setDeactivateTarget(d)}
                             >
                               Deactivate
                             </button>
@@ -324,7 +284,7 @@ function DonorsPage() {
                 className="form-control"
                 placeholder="e.g. Ananya Roy"
                 value={formData.full_name}
-                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                onChange={setField('full_name')}
                 required
                 autoFocus
               />
@@ -340,7 +300,7 @@ function DonorsPage() {
                   min="18"
                   max="65"
                   value={formData.age}
-                  onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+                  onChange={setField('age')}
                   required
                 />
               </div>
@@ -349,7 +309,7 @@ function DonorsPage() {
                 <select
                   className="form-control"
                   value={formData.gender}
-                  onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                  onChange={setField('gender')}
                 >
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
@@ -364,7 +324,7 @@ function DonorsPage() {
                 <select
                   className="form-control"
                   value={formData.blood_group_id}
-                  onChange={(e) => setFormData({ ...formData, blood_group_id: e.target.value })}
+                  onChange={setField('blood_group_id')}
                   required
                 >
                   <option value="">Select blood group</option>
@@ -380,7 +340,7 @@ function DonorsPage() {
                   className="form-control"
                   placeholder="10-digit mobile"
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  onChange={setField('phone')}
                   maxLength="15"
                   required
                 />
@@ -394,7 +354,7 @@ function DonorsPage() {
                 className="form-control"
                 placeholder="name@example.com"
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onChange={setField('email')}
               />
             </div>
 
@@ -405,7 +365,7 @@ function DonorsPage() {
                 className="form-control"
                 placeholder="Residential address"
                 value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                onChange={setField('address')}
               />
             </div>
           </div>
@@ -427,12 +387,12 @@ function DonorsPage() {
       </Modal>
 
       <ConfirmModal
-        isOpen={confirmDelete.isOpen}
+        isOpen={Boolean(deactivateTarget)}
         title="Deactivate Donor"
-        message={`Mark ${confirmDelete.donorName} as inactive?`}
+        message={`Mark ${deactivateTarget?.full_name} as inactive?`}
         confirmText="Deactivate"
         onConfirm={executeDelete}
-        onClose={() => setConfirmDelete({ isOpen: false, donorId: null, donorName: '' })}
+        onClose={() => setDeactivateTarget(null)}
       />
     </div>
   );

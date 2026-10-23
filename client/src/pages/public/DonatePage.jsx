@@ -5,6 +5,18 @@ import { today } from '../../utils/dates';
 import { useToast } from '../../context/ToastContext';
 import { useUserAuth } from '../../hooks/useUserAuth';
 
+// Used when the API can't be reached: the 8 standard groups (ids match seed.sql)
+const STANDARD_GROUPS = [
+  { id: 1, group_name: 'A+' },
+  { id: 2, group_name: 'A-' },
+  { id: 3, group_name: 'B+' },
+  { id: 4, group_name: 'B-' },
+  { id: 5, group_name: 'AB+' },
+  { id: 6, group_name: 'AB-' },
+  { id: 7, group_name: 'O+' },
+  { id: 8, group_name: 'O-' }
+];
+
 function DonatePage() {
   const [bloodGroups, setBloodGroups] = useState([]);
   const [loadingGroups, setLoadingGroups] = useState(true);
@@ -41,29 +53,11 @@ function DonatePage() {
   }, [user, submittedData]);
 
   useEffect(() => {
-    fetchBloodGroups();
+    api.get('/dashboard/blood-groups')
+      .then((res) => setBloodGroups(res.data || []))
+      .catch(() => setBloodGroups(STANDARD_GROUPS))
+      .finally(() => setLoadingGroups(false));
   }, []);
-
-  const fetchBloodGroups = async () => {
-    try {
-      const res = await api.get('/dashboard/blood-groups');
-      setBloodGroups(res.data || []);
-    } catch (err) {
-      // API unreachable: fall back to the 8 standard groups (ids match seed.sql)
-      setBloodGroups([
-        { id: 1, group_name: 'A+' },
-        { id: 2, group_name: 'A-' },
-        { id: 3, group_name: 'B+' },
-        { id: 4, group_name: 'B-' },
-        { id: 5, group_name: 'AB+' },
-        { id: 6, group_name: 'AB-' },
-        { id: 7, group_name: 'O+' },
-        { id: 8, group_name: 'O-' }
-      ]);
-    } finally {
-      setLoadingGroups(false);
-    }
-  };
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -121,12 +115,7 @@ function DonatePage() {
       };
 
       const res = await api.post('/donations/public-signup', payload);
-      setSubmittedData({
-        ...res.data,
-        donor_phone: cleanPhone,
-        email: formData.email.trim(),
-        address: formData.address.trim()
-      });
+      setSubmittedData({ ...res.data, donor_phone: cleanPhone });
       showToast('Donation booked', 'success');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {

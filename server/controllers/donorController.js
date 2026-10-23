@@ -1,4 +1,22 @@
 const { pool } = require('../config/db');
+const { EMAIL_RE, PHONE_RE } = require('../utils/validation');
+
+// Checks shared by create and update. Message for the first problem found, or null.
+function donorProblem({ full_name, age, gender, blood_group_id, phone, email }) {
+  if (!full_name || !age || !gender || !blood_group_id || !phone) {
+    return 'Full name, age, gender, blood group, and phone are required.';
+  }
+  if (age < 18 || age > 65) {
+    return 'Donor age must be between 18 and 65.';
+  }
+  if (!PHONE_RE.test(phone)) {
+    return 'Phone number must be exactly 10 digits.';
+  }
+  if (email && !EMAIL_RE.test(email)) {
+    return 'Please provide a valid email address.';
+  }
+  return null;
+}
 
 // GET /api/donors
 async function getAllDonors(req, res) {
@@ -66,21 +84,9 @@ async function createDonor(req, res) {
   try {
     const { full_name, date_of_birth, age, gender, blood_group_id, phone, email, address } = req.body;
 
-    // Validation
-    if (!full_name || !age || !gender || !blood_group_id || !phone) {
-      return res.status(400).json({ message: 'Full name, age, gender, blood group, and phone are required.' });
-    }
-
-    if (age < 18 || age > 65) {
-      return res.status(400).json({ message: 'Donor age must be between 18 and 65.' });
-    }
-
-    if (!/^\d{10}$/.test(phone)) {
-      return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' });
-    }
-
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return res.status(400).json({ message: 'Please provide a valid email address.' });
+    const problem = donorProblem(req.body);
+    if (problem) {
+      return res.status(400).json({ message: problem });
     }
 
     // Check blood group exists
@@ -113,20 +119,9 @@ async function updateDonor(req, res) {
   try {
     const { full_name, date_of_birth, age, gender, blood_group_id, phone, email, address, is_eligible, is_active } = req.body;
 
-    if (!full_name || !age || !gender || !blood_group_id || !phone) {
-      return res.status(400).json({ message: 'Full name, age, gender, blood group, and phone are required.' });
-    }
-
-    if (age < 18 || age > 65) {
-      return res.status(400).json({ message: 'Donor age must be between 18 and 65.' });
-    }
-
-    if (!/^\d{10}$/.test(phone)) {
-      return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' });
-    }
-
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return res.status(400).json({ message: 'Please provide a valid email address.' });
+    const problem = donorProblem(req.body);
+    if (problem) {
+      return res.status(400).json({ message: problem });
     }
 
     // Check duplicate phone (exclude current donor)

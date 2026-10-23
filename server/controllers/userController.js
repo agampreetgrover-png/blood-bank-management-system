@@ -1,26 +1,29 @@
 const { pool } = require('../config/db');
-const { sendOtpEmail } = require('../utils/mailer');
-const { issueOtp, discardOtp, consumeOtp, RESEND_COOLDOWN_SECONDS, OTP_TTL_MINUTES } = require('../utils/otp');
-const { signToken } = require('../utils/tokens');
+const { signToken, verifyToken } = require('../utils/tokens');
 const { passwordProblem, hashPassword, checkPassword } = require('../utils/passwords');
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const { EMAIL_RE, PHONE_RE, cleanPhone } = require('../utils/validation');
+const {
+  encryptSecret, decryptSecret, newSecret, setupInfo, checkCode,
+  newBackupCodes, backupCodesLeft, verifyUserCode, INCORRECT
+} = require('../utils/totp');
 
 const USER_SELECT = `SELECT u.*, bg.group_name AS blood_group FROM users u
   LEFT JOIN blood_groups bg ON u.blood_group_id = bg.id`;
 
+const DEACTIVATED = 'This account has been deactivated. Please contact the blood bank.';
+const LOGIN_EXPIRED = 'Your login has expired. Please log in again.';
+const SIGNUP_EXPIRED = 'This sign up has expired. Please start again.';
+
 // Login accepts the email address or the phone number
 async function findByIdentifier(identifier) {
   const id = String(identifier || '').trim().toLowerCase();
-  const [rows] = await pool.query(`${USER_SELECT} WHERE u.email = ? OR u.phone = ?`, [id, id.replace(/[\s-]/g, '')]);
+  const [rows] = await pool.query(`${USER_SELECT} WHERE u.email = ? OR u.phone = ?`, [id, cleanPhone(id)]);
   return rows[0];
 }
 
-// "jane.doe@gmail.com" -> "ja***@gmail.com". Someone can log in with a phone number,
-// and knowing the password alone shouldn't reveal the account's email address.
-function maskEmail(email) {
-  const [name, domain] = email.split('@');
-  return `${name.slice(0, Math.min(2, name.length - 1))}***@${domain}`;
+async function findById(id) {
+  const [[user]] = await pool.query(`${USER_SELECT} WHERE u.id = ?`, [id]);
+  return user;
 }
 
 // ver must match users.token_version for the token to be accepted (see middleware/userAuth.js)
@@ -47,31 +50,32 @@ function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
 
-function otpSentResponse(email, resendIn = RESEND_COOLDOWN_SECONDS) {
-  return {
-    message: `We sent a 6-digit code to ${email}.`,
-    email,
-    resend_in: resendIn,
-    expires_in: OTP_TTL_MINUTES * 60
-  };
-}
-
-// Issues a code and emails it. Returns the throttle result instead of sending when asked too often.
-async function sendCode(email, purpose, payload) {
-  const issued = await issueOtp(email, purpose, payload);
-  if (issued.throttled) return issued;
+// Runs fn(conn) in a transaction and returns its result
+async function inTransaction(fn) {
+  const conn = await pool.getConnection();
   try {
-    await sendOtpEmail(email, issued.code, purpose);
+    await conn.beginTransaction();
+    const result = await fn(conn);
+    await conn.commit();
+    return result;
   } catch (error) {
-    await discardOtp(issued.id);
+    await conn.rollback();
     throw error;
+  } finally {
+    conn.release();
   }
-  return issued;
 }
 
-// POST /api/users/signup/request-otp
-// Validates the sign up details and emails a code. The account is only created once the code is verified.
-async function requestSignupOtp(req, res) {
+// What the client shows to add the account to an authenticator app
+async function setupResponse(secret, email) {
+  const { qr } = await setupInfo(secret, email);
+  return { secret, qr };
+}
+
+// POST /api/users/signup - { full_name, email, phone, password, blood_group_id? }
+// Checks the details and returns a QR code for the authenticator app. Nothing is saved yet:
+// the details travel in setup_token and the account is created at /signup/verify.
+async function startSignup(req, res) {
   try {
     const { full_name, phone, password, blood_group_id } = req.body;
     const cleanEmail = normalizeEmail(req.body.email);
@@ -83,8 +87,8 @@ async function requestSignupOtp(req, res) {
       return res.status(400).json({ message: 'Please provide a valid email address.' });
     }
 
-    const cleanPhone = String(phone).replace(/[\s-]/g, '');
-    if (!/^\d{10}$/.test(cleanPhone)) {
+    const mobile = cleanPhone(phone);
+    if (!PHONE_RE.test(mobile)) {
       return res.status(400).json({ message: 'Phone number must be a valid 10-digit mobile number.' });
     }
 
@@ -104,60 +108,73 @@ async function requestSignupOtp(req, res) {
 
     const [existing] = await pool.query(
       'SELECT email, phone FROM users WHERE email = ? OR phone = ?',
-      [cleanEmail, cleanPhone]
+      [cleanEmail, mobile]
     );
     if (existing.length > 0) {
       const field = existing.some((u) => u.email === cleanEmail) ? 'email address' : 'phone number';
       return res.status(409).json({ message: `An account with this ${field} already exists. Please log in.` });
     }
 
-    // Only the bcrypt hash waits in otp_codes until the email is verified, never the plain password
-    const result = await sendCode(cleanEmail, 'signup', {
+    // The token is signed, not hidden, so it only carries the bcrypt hash and the encrypted secret
+    const secret = newSecret();
+    const setup_token = signToken('signup', {
       full_name: String(full_name).trim(),
-      phone: cleanPhone,
+      email: cleanEmail,
+      phone: mobile,
       blood_group_id: bloodGroupId,
-      password_hash: await hashPassword(password)
+      password_hash: await hashPassword(password),
+      secret: encryptSecret(secret)
     });
-    if (result.throttled) {
-      return res.status(429).json({ message: 'Please wait before requesting another code.', retry_after: result.retryAfter });
-    }
 
-    res.json(otpSentResponse(cleanEmail));
+    res.json({ setup_token, setup: await setupResponse(secret, cleanEmail) });
   } catch (error) {
-    console.error('Signup OTP error:', error);
-    res.status(502).json({ message: "We couldn't send the verification email. Please try again." });
+    console.error('Start signup error:', error);
+    res.status(500).json({ message: 'Something went wrong. Please try again.' });
   }
 }
 
-// POST /api/users/signup/verify - { email, code }. A valid code creates the account and logs in.
+// POST /api/users/signup/verify - { setup_token, code }
+// A code from the newly added authenticator creates the account, its backup codes, and logs in.
 async function verifySignup(req, res) {
   try {
-    const cleanEmail = normalizeEmail(req.body.email);
-    if (!EMAIL_RE.test(cleanEmail)) {
-      return res.status(400).json({ message: 'Please provide a valid email address.' });
+    const pending = verifyToken(req.body.setup_token, 'signup');
+    if (!pending) {
+      return res.status(400).json({ message: SIGNUP_EXPIRED });
     }
 
-    const result = await consumeOtp(cleanEmail, 'signup', req.body.code);
-    if (!result.ok) {
-      return res.status(result.status).json({ message: result.message });
-    }
-
-    const { full_name, phone, blood_group_id, password_hash } = result.payload;
+    let secret;
     try {
-      await pool.query(
-        'INSERT INTO users (full_name, email, phone, password, blood_group_id) VALUES (?, ?, ?, ?, ?)',
-        [full_name, cleanEmail, phone, password_hash, blood_group_id]
-      );
+      secret = decryptSecret(pending.secret);
+    } catch {
+      return res.status(400).json({ message: SIGNUP_EXPIRED });
+    }
+    const step = checkCode(secret, req.body.code);
+    if (step === null) {
+      return res.status(400).json({ message: INCORRECT.message });
+    }
+
+    const { full_name, email, phone, blood_group_id, password_hash } = pending;
+    let created;
+    try {
+      created = await inTransaction(async (conn) => {
+        const [result] = await conn.query(
+          `INSERT INTO users (full_name, email, phone, password, blood_group_id, totp_secret, totp_last_step)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [full_name, email, phone, password_hash, blood_group_id, pending.secret, step]
+        );
+        const codes = await newBackupCodes(result.insertId, conn);
+        return { id: result.insertId, codes };
+      });
     } catch (error) {
-      // Someone registered this email/phone between the request and the verification
+      // Someone registered this email/phone since the details were checked (or this sign up was already finished)
       if (error.code === 'ER_DUP_ENTRY') {
         return res.status(409).json({ message: 'An account with these details already exists. Please log in.' });
       }
       throw error;
     }
 
-    const [[user]] = await pool.query(`${USER_SELECT} WHERE u.email = ?`, [cleanEmail]);
-    res.status(201).json(sessionResponse('Account created successfully.', user));
+    const user = await findById(created.id);
+    res.status(201).json({ ...sessionResponse('Account created successfully.', user), backup_codes: created.codes });
   } catch (error) {
     console.error('Verify signup error:', error);
     res.status(500).json({ message: 'Something went wrong. Please try again.' });
@@ -165,8 +182,9 @@ async function verifySignup(req, res) {
 }
 
 // POST /api/users/login - step 1 of 2: { identifier, password }, identifier is the email or phone number.
-// The right password doesn't log in by itself; it emails a code to the account, checked at /login/verify.
-// Login codes are only ever sent from here, so a valid one proves both the password and the inbox.
+// The right password doesn't log in by itself: it returns an mfa_token for /login/verify.
+// stage 'verify': enter the code from the authenticator app (or a backup code).
+// stage 'setup': no authenticator yet, so the account sets one up first (QR code included).
 async function loginUser(req, res) {
   try {
     const { identifier, password } = req.body;
@@ -175,121 +193,143 @@ async function loginUser(req, res) {
     }
 
     const user = await findByIdentifier(identifier);
-    // An account without a password sets one with "Forgot password?" first
+    // An account without a password can't log in
     if (!(await checkPassword(password, user?.password))) {
       return res.status(401).json({ message: 'Invalid email/phone or password.' });
     }
     if (!user.is_active) {
-      return res.status(403).json({ message: 'This account has been deactivated. Please contact the blood bank.' });
+      return res.status(403).json({ message: DEACTIVATED });
     }
 
-    let result;
-    try {
-      result = await sendCode(user.email, 'login', null);
-    } catch (error) {
-      console.error('Login OTP error:', error);
-      return res.status(502).json({ message: "We couldn't send the login code. Please try again." });
-    }
-    // Logging in again straight away (a page refresh, or going back a step) keeps the code that was just sent
-    if (result.throttled && !result.cooldown) {
-      return res.status(429).json({
-        message: 'Too many login codes requested for this account. Please try again later.',
-        retry_after: result.retryAfter
-      });
+    const claims = { id: user.id, ver: user.token_version };
+    if (user.totp_secret) {
+      return res.json({ stage: 'verify', mfa_token: signToken('mfa', { ...claims, stage: 'verify' }) });
     }
 
-    res.json(otpSentResponse(maskEmail(user.email), result.cooldown ? result.retryAfter : RESEND_COOLDOWN_SECONDS));
+    const secret = newSecret();
+    res.json({
+      stage: 'setup',
+      mfa_token: signToken('mfa', { ...claims, stage: 'setup', secret: encryptSecret(secret) }),
+      setup: await setupResponse(secret, user.email)
+    });
   } catch (error) {
     console.error('Login user error:', error);
     res.status(500).json({ message: 'Server error during login.' });
   }
 }
 
-// POST /api/users/login/verify - step 2 of 2: { identifier, code } with the code emailed by /login
+// POST /api/users/login/verify - step 2 of 2: { mfa_token, code }
 async function verifyLogin(req, res) {
   try {
-    const user = await findByIdentifier(req.body.identifier);
-    if (!user) {
-      return res.status(400).json({ message: 'That code is invalid or has expired. Request a new one.' });
+    const pending = verifyToken(req.body.mfa_token, 'mfa');
+    if (!pending) {
+      return res.status(400).json({ message: LOGIN_EXPIRED });
     }
 
-    const result = await consumeOtp(user.email, 'login', req.body.code);
+    const user = await findById(pending.id);
+    // A password reset or an authenticator reset since step 1 raises token_version
+    if (!user || user.token_version !== pending.ver) {
+      return res.status(400).json({ message: LOGIN_EXPIRED });
+    }
+    if (!user.is_active) {
+      return res.status(403).json({ message: DEACTIVATED });
+    }
+
+    if (pending.stage === 'verify') {
+      if (!user.totp_secret) {
+        return res.status(400).json({ message: LOGIN_EXPIRED });
+      }
+      const result = await verifyUserCode(user.id, req.body.code);
+      if (!result.ok) {
+        return res.status(result.status).json({ message: result.message });
+      }
+      return res.json({ ...sessionResponse('Login successful', user), backup_codes_left: await backupCodesLeft(user.id) });
+    }
+
+    if (pending.stage !== 'setup' || user.totp_secret) {
+      return res.status(400).json({ message: LOGIN_EXPIRED });
+    }
+    const result = await verifyUserCode(user.id, req.body.code, { pendingSecret: pending.secret });
     if (!result.ok) {
       return res.status(result.status).json({ message: result.message });
     }
-    // Deactivated since the password step
-    if (!user.is_active) {
-      return res.status(403).json({ message: 'This account has been deactivated. Please contact the blood bank.' });
+
+    // Saved only if no authenticator was set up in the meantime
+    const codes = await inTransaction(async (conn) => {
+      const [saved] = await conn.query(
+        `UPDATE users SET totp_secret = ?, totp_last_step = ?, mfa_failures = 0, mfa_locked_until = NULL
+         WHERE id = ? AND totp_secret IS NULL AND token_version = ?`,
+        [pending.secret, result.step, user.id, pending.ver]
+      );
+      if (saved.affectedRows === 0) return null;
+      return newBackupCodes(user.id, conn);
+    });
+    if (!codes) {
+      return res.status(400).json({ message: LOGIN_EXPIRED });
     }
 
-    res.json(sessionResponse('Login successful', user));
+    res.json({ ...sessionResponse('Login successful', user), backup_codes: codes });
   } catch (error) {
     console.error('Verify login error:', error);
     res.status(500).json({ message: 'Something went wrong. Please try again.' });
   }
 }
 
-// POST /api/users/password/request-otp - { email }
-// Emails a password reset code to an existing account. The answer is the same whether or not
-// the email has an account, so it can't be used to find out who is registered.
-async function requestResetOtp(req, res) {
-  try {
-    const cleanEmail = normalizeEmail(req.body.email);
-    if (!EMAIL_RE.test(cleanEmail)) {
-      return res.status(400).json({ message: 'Please provide a valid email address.' });
-    }
-
-    const [rows] = await pool.query('SELECT id FROM users WHERE email = ?', [cleanEmail]);
-    if (rows.length > 0) {
-      await sendCode(cleanEmail, 'reset', null);
-    }
-
-    res.json(otpSentResponse(cleanEmail));
-  } catch (error) {
-    console.error('Reset OTP error:', error);
-    res.status(502).json({ message: "We couldn't send the verification email. Please try again." });
-  }
-}
-
-// POST /api/users/password/reset - { email, code, password }
-// The emailed code proves the email address. The new password replaces the old one, every other
-// session for the account is signed out, and the user is logged in here.
+// POST /api/users/password/reset - { identifier, code, password }
+// The authenticator code (or a backup code) proves it's the owner. The new password replaces the old one,
+// every other session for the account is signed out, and the user is logged in here.
+// An account without an authenticator gets the same answer as a wrong code; staff can help such users.
 async function resetPassword(req, res) {
   try {
-    const cleanEmail = normalizeEmail(req.body.email);
-    const { code, password } = req.body;
-
-    if (!EMAIL_RE.test(cleanEmail)) {
-      return res.status(400).json({ message: 'Please provide a valid email address.' });
+    const { identifier, code, password } = req.body;
+    if (!identifier || !code) {
+      return res.status(400).json({ message: 'Email/phone and code are required.' });
     }
-    // Checked before the code, so a password that isn't allowed doesn't use up an attempt
+    // Checked before the code, so a password that isn't allowed doesn't count as a wrong code
     const problem = passwordProblem(password);
     if (problem) {
       return res.status(400).json({ message: problem });
     }
 
-    const result = await consumeOtp(cleanEmail, 'reset', code);
+    const account = await findByIdentifier(identifier);
+    if (!account || !account.totp_secret) {
+      return res.status(400).json({ message: INCORRECT.message });
+    }
+
+    const result = await verifyUserCode(account.id, code);
     if (!result.ok) {
       return res.status(result.status).json({ message: result.message });
     }
-
-    const [[account]] = await pool.query('SELECT id, is_active FROM users WHERE email = ?', [cleanEmail]);
-    if (!account) {
-      return res.status(401).json({ message: 'Account not found. Please create an account.' });
-    }
     if (!account.is_active) {
-      return res.status(403).json({ message: 'This account has been deactivated. Please contact the blood bank.' });
+      return res.status(403).json({ message: DEACTIVATED });
     }
 
     await pool.query(
       'UPDATE users SET password = ?, token_version = token_version + 1 WHERE id = ?',
       [await hashPassword(password), account.id]
     );
-    const [[user]] = await pool.query(`${USER_SELECT} WHERE u.id = ?`, [account.id]);
+    const user = await findById(account.id);
 
     res.json(sessionResponse('Your password has been changed.', user));
   } catch (error) {
     console.error('Reset password error:', error);
+    res.status(500).json({ message: 'Something went wrong. Please try again.' });
+  }
+}
+
+// POST /api/users/mfa/backup-codes - { code } with the current authenticator code.
+// Replaces all backup codes with 8 new ones.
+async function regenerateBackupCodes(req, res) {
+  try {
+    const result = await verifyUserCode(req.user.id, req.body.code, { allowBackup: false });
+    if (!result.ok) {
+      return res.status(result.status).json({ message: result.message });
+    }
+
+    const codes = await inTransaction((conn) => newBackupCodes(req.user.id, conn));
+    res.json({ backup_codes: codes });
+  } catch (error) {
+    console.error('Backup codes error:', error);
     res.status(500).json({ message: 'Something went wrong. Please try again.' });
   }
 }
@@ -329,7 +369,13 @@ async function getMyAccount(req, res) {
       [req.user.id]
     );
 
-    res.json({ user: publicUser(rows[0]), donor: donor || null, donations, requests });
+    res.json({
+      user: publicUser(rows[0]),
+      donor: donor || null,
+      donations,
+      requests,
+      backup_codes_left: await backupCodesLeft(req.user.id)
+    });
   } catch (error) {
     console.error('Get account error:', error);
     res.status(500).json({ message: 'Failed to load account.' });
@@ -337,11 +383,11 @@ async function getMyAccount(req, res) {
 }
 
 module.exports = {
-  requestSignupOtp,
+  startSignup,
   verifySignup,
   loginUser,
   verifyLogin,
-  requestResetOtp,
   resetPassword,
+  regenerateBackupCodes,
   getMyAccount
 };

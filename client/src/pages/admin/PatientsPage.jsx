@@ -1,79 +1,44 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import api from '../../services/api';
+import { useBloodGroups, useFilteredList } from '../../hooks/useAdminData';
 import Modal from '../../components/Modal';
 import SearchInput from '../../components/SearchInput';
 import ConfirmModal from '../../components/ConfirmModal';
 import { useToast } from '../../context/ToastContext';
 
+const EMPTY_FORM = {
+  full_name: '',
+  age: '',
+  gender: 'Male',
+  blood_group_id: '',
+  hospital: '',
+  phone: ''
+};
+
 function PatientsPage() {
-  const [patients, setPatients] = useState([]);
-  const [bloodGroups, setBloodGroups] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterBG, setFilterBG] = useState('');
+  const bloodGroups = useBloodGroups();
+  const { items: patients, loading, reload: fetchPatients } = useFilteredList(
+    '/patients',
+    { search: search.trim(), blood_group: filterBG },
+    'Could not load patient list'
+  );
 
   const [showModal, setShowModal] = useState(false);
   const [editingPatient, setEditingPatient] = useState(null);
+  const [deactivateTarget, setDeactivateTarget] = useState(null);
 
-  const [confirmDelete, setConfirmDelete] = useState({
-    isOpen: false,
-    patientId: null,
-    patientName: ''
-  });
-
-  const [formData, setFormData] = useState({
-    full_name: '',
-    age: '',
-    gender: 'Male',
-    blood_group_id: '',
-    hospital: '',
-    phone: ''
-  });
-
+  const [formData, setFormData] = useState(EMPTY_FORM);
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const { showToast } = useToast();
 
-  useEffect(() => {
-    fetchBloodGroups();
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => fetchPatients(), 250);
-    return () => clearTimeout(timer);
-  }, [search, filterBG]);
-
-  const fetchBloodGroups = async () => {
-    try {
-      const res = await api.get('/dashboard/blood-groups');
-      setBloodGroups(res.data);
-    } catch (err) {}
-  };
-
-  const fetchPatients = async () => {
-    try {
-      const params = {};
-      if (search.trim()) params.search = search.trim();
-      if (filterBG) params.blood_group = filterBG;
-      const res = await api.get('/patients', { params });
-      setPatients(res.data);
-    } catch (err) {
-      showToast('Could not load patient list', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const setField = (name) => (e) => setFormData((prev) => ({ ...prev, [name]: e.target.value }));
 
   const openAddModal = () => {
     setEditingPatient(null);
-    setFormData({
-      full_name: '',
-      age: '',
-      gender: 'Male',
-      blood_group_id: '',
-      hospital: '',
-      phone: ''
-    });
+    setFormData(EMPTY_FORM);
     setFormError('');
     setShowModal(true);
   };
@@ -144,11 +109,11 @@ function PatientsPage() {
 
   const executeDelete = async () => {
     try {
-      await api.delete(`/patients/${confirmDelete.patientId}`);
+      await api.delete(`/patients/${deactivateTarget.id}`);
       showToast('Patient marked inactive', 'info');
-      setConfirmDelete({ isOpen: false, patientId: null, patientName: '' });
+      setDeactivateTarget(null);
       fetchPatients();
-    } catch (err) {
+    } catch {
       showToast('Action failed', 'error');
     }
   };
@@ -166,7 +131,7 @@ function PatientsPage() {
       });
       showToast('Patient record reactivated', 'success');
       fetchPatients();
-    } catch (err) {
+    } catch {
       showToast('Could not reactivate patient', 'error');
     }
   };
@@ -190,10 +155,9 @@ function PatientsPage() {
           onClear={() => setSearch('')}
         />
         <select
-          className="form-control"
+          className="form-control filter-select"
           value={filterBG}
           onChange={(e) => setFilterBG(e.target.value)}
-          style={{ width: 'auto', minWidth: 140 }}
         >
           <option value="">All Blood Groups</option>
           {bloodGroups.map((bg) => (
@@ -215,7 +179,6 @@ function PatientsPage() {
               <button
                 type="button"
                 className="btn btn-sm btn-secondary"
-                style={{ marginTop: 10 }}
                 onClick={() => {
                   setSearch('');
                   setFilterBG('');
@@ -230,7 +193,6 @@ function PatientsPage() {
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
-                style={{ marginTop: 10 }}
                 onClick={openAddModal}
               >
                 + Register First Patient
@@ -240,7 +202,7 @@ function PatientsPage() {
         </div>
       ) : (
         <div className="card">
-          <div className="card-body" style={{ padding: 0 }}>
+          <div className="card-body">
             <div className="table-container">
               <table>
                 <thead>
@@ -277,7 +239,7 @@ function PatientsPage() {
                           {p.is_active ? (
                             <button
                               className="btn btn-sm btn-danger-text"
-                              onClick={() => setConfirmDelete({ isOpen: true, patientId: p.id, patientName: p.full_name })}
+                              onClick={() => setDeactivateTarget(p)}
                             >
                               Deactivate
                             </button>
@@ -317,7 +279,7 @@ function PatientsPage() {
                 className="form-control"
                 placeholder="e.g. Suresh Yadav"
                 value={formData.full_name}
-                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                onChange={setField('full_name')}
                 required
                 autoFocus
               />
@@ -333,7 +295,7 @@ function PatientsPage() {
                   min="0"
                   max="120"
                   value={formData.age}
-                  onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+                  onChange={setField('age')}
                   required
                 />
               </div>
@@ -342,7 +304,7 @@ function PatientsPage() {
                 <select
                   className="form-control"
                   value={formData.gender}
-                  onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                  onChange={setField('gender')}
                 >
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
@@ -357,7 +319,7 @@ function PatientsPage() {
                 <select
                   className="form-control"
                   value={formData.blood_group_id}
-                  onChange={(e) => setFormData({ ...formData, blood_group_id: e.target.value })}
+                  onChange={setField('blood_group_id')}
                   required
                 >
                   <option value="">Select group</option>
@@ -373,7 +335,7 @@ function PatientsPage() {
                   className="form-control"
                   placeholder="e.g. AIIMS Delhi"
                   value={formData.hospital}
-                  onChange={(e) => setFormData({ ...formData, hospital: e.target.value })}
+                  onChange={setField('hospital')}
                   required
                 />
               </div>
@@ -386,7 +348,7 @@ function PatientsPage() {
                 className="form-control"
                 placeholder="e.g. 9811223344"
                 value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                onChange={setField('phone')}
                 maxLength="15"
                 required
               />
@@ -410,12 +372,12 @@ function PatientsPage() {
       </Modal>
 
       <ConfirmModal
-        isOpen={confirmDelete.isOpen}
+        isOpen={Boolean(deactivateTarget)}
         title="Deactivate Patient Record"
-        message={`Deactivate patient "${confirmDelete.patientName}"?`}
+        message={`Deactivate patient "${deactivateTarget?.full_name}"?`}
         confirmText="Deactivate"
         onConfirm={executeDelete}
-        onClose={() => setConfirmDelete({ isOpen: false, patientId: null, patientName: '' })}
+        onClose={() => setDeactivateTarget(null)}
       />
     </div>
   );

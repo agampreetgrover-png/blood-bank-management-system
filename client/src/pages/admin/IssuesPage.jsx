@@ -1,74 +1,55 @@
 import { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { today } from '../../utils/dates';
+import { useBloodGroups, useFilteredList } from '../../hooks/useAdminData';
 import Modal from '../../components/Modal';
 import SearchInput from '../../components/SearchInput';
 import { useToast } from '../../context/ToastContext';
 
+const emptyForm = () => ({
+  patient_id: '',
+  blood_group_id: '',
+  units_issued: 1,
+  issue_date: today()
+});
+
 function IssuesPage() {
-  const [issues, setIssues] = useState([]);
-  const [patients, setPatients] = useState([]);
-  const [bloodGroups, setBloodGroups] = useState([]);
-  const [inventory, setInventory] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const bloodGroups = useBloodGroups();
+  const [patients, setPatients] = useState([]);
+  const [inventory, setInventory] = useState([]);
+  const { items: issues, loading, reload: fetchIssues } = useFilteredList(
+    '/issues',
+    { search: search.trim() },
+    'Could not load dispensation logs'
+  );
+
   const [showModal, setShowModal] = useState(false);
-
-  const [formData, setFormData] = useState({
-    patient_id: '',
-    blood_group_id: '',
-    units_issued: 1,
-    issue_date: today(),
-    notes: ''
-  });
-
+  const [formData, setFormData] = useState(emptyForm);
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const { showToast } = useToast();
 
+  const setField = (name) => (e) => setFormData((prev) => ({ ...prev, [name]: e.target.value }));
+
+  // Active patients for the dispense form
   useEffect(() => {
-    fetchBloodGroups();
-    fetchPatients();
-    fetchInventory();
+    api.get('/patients', { params: { status: 'active' } })
+      .then((res) => setPatients(res.data))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => fetchIssues(), 250);
-    return () => clearTimeout(timer);
-  }, [search]);
-
-  const fetchIssues = async () => {
-    try {
-      const params = {};
-      if (search.trim()) params.search = search.trim();
-      const res = await api.get('/issues', { params });
-      setIssues(res.data);
-    } catch (err) {
-      showToast('Could not load dispensation logs', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchPatients = async () => {
-    try {
-      const res = await api.get('/patients', { params: { status: 'active' } });
-      setPatients(res.data);
-    } catch (err) {}
-  };
-
-  const fetchBloodGroups = async () => {
-    try {
-      const res = await api.get('/dashboard/blood-groups');
-      setBloodGroups(res.data);
-    } catch (err) {}
-  };
+    fetchInventory();
+  }, []);
 
   const fetchInventory = async () => {
     try {
       const res = await api.get('/inventory');
       setInventory(res.data);
-    } catch (err) {}
+    } catch {
+      // stock then reads 0 and the form refuses to dispense
+    }
   };
 
   const getAvailableStock = (bgId) => {
@@ -77,13 +58,7 @@ function IssuesPage() {
   };
 
   const openNewIssueModal = () => {
-    setFormData({
-      patient_id: '',
-      blood_group_id: '',
-      units_issued: 1,
-      issue_date: today(),
-      notes: ''
-    });
+    setFormData(emptyForm());
     setFormError('');
     setShowModal(true);
     fetchInventory();
@@ -126,7 +101,7 @@ function IssuesPage() {
         blood_group_id: parseInt(formData.blood_group_id, 10),
         units_issued: units,
         issue_date: formData.issue_date,
-        notes: formData.notes.trim() || null
+        notes: null // the form has no notes field
       });
 
       showToast('Blood units successfully dispensed', 'success');
@@ -173,7 +148,6 @@ function IssuesPage() {
               <button
                 type="button"
                 className="btn btn-sm btn-secondary"
-                style={{ marginTop: 10 }}
                 onClick={() => setSearch('')}
               >
                 Clear Search
@@ -185,7 +159,6 @@ function IssuesPage() {
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
-                style={{ marginTop: 10 }}
                 onClick={openNewIssueModal}
               >
                 + Direct Dispense
@@ -195,7 +168,7 @@ function IssuesPage() {
         </div>
       ) : (
         <div className="card">
-          <div className="card-body" style={{ padding: 0 }}>
+          <div className="card-body">
             <div className="table-container">
               <table>
                 <thead>
@@ -267,7 +240,7 @@ function IssuesPage() {
                 <select
                   className="form-control"
                   value={formData.blood_group_id}
-                  onChange={(e) => setFormData({ ...formData, blood_group_id: e.target.value })}
+                  onChange={setField('blood_group_id')}
                   required
                 >
                   <option value="">Select group</option>
@@ -278,7 +251,7 @@ function IssuesPage() {
                   ))}
                 </select>
                 {formData.blood_group_id && (
-                  <small style={{ color: getAvailableStock(formData.blood_group_id) < (parseInt(formData.units_issued, 10) || 1) ? 'var(--danger)' : 'var(--text-muted)', fontSize: '11.5px', display: 'block', marginTop: 4 }}>
+                  <small className={`field-hint stock-hint${getAvailableStock(formData.blood_group_id) < (parseInt(formData.units_issued, 10) || 1) ? ' stock-hint-short' : ''}`}>
                     Available stock: {getAvailableStock(formData.blood_group_id)} unit(s)
                   </small>
                 )}
@@ -289,7 +262,7 @@ function IssuesPage() {
                   type="number"
                   className="form-control"
                   value={formData.units_issued}
-                  onChange={(e) => setFormData({ ...formData, units_issued: parseInt(e.target.value, 10) || '' })}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, units_issued: parseInt(e.target.value, 10) || '' }))}
                   min="1"
                   max="10"
                   required
@@ -304,7 +277,7 @@ function IssuesPage() {
                 className="form-control"
                 value={formData.issue_date}
                 max={today()}
-                onChange={(e) => setFormData({ ...formData, issue_date: e.target.value })}
+                onChange={setField('issue_date')}
                 required
               />
             </div>

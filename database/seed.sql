@@ -26,6 +26,13 @@ INSERT INTO admins (name, email, password) VALUES
 ('Dr. Rajesh Kumar', 'admin@bloodbank.com', '$2b$10$ULV/5vGWQRo9vZiOStsFAuJkK7PmJ3/ZGoWMqhdC5ofPivCy.ni46');
 
 -- ============================================
+-- Public user accounts
+-- None are seeded - make one from the sign up page. Any users added here
+-- should leave totp_secret NULL, so they set up their authenticator app
+-- at their first login.
+-- ============================================
+
+-- ============================================
 -- Initialize Inventory for all blood groups
 -- ============================================
 INSERT INTO inventory (blood_group_id, available_units) VALUES

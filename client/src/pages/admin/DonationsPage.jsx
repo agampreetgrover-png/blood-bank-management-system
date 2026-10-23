@@ -1,28 +1,34 @@
 import { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { today } from '../../utils/dates';
+import { useBloodGroups, useFilteredList } from '../../hooks/useAdminData';
 import Modal from '../../components/Modal';
 import SearchInput from '../../components/SearchInput';
 import ConfirmModal from '../../components/ConfirmModal';
 import { useToast } from '../../context/ToastContext';
 
+const emptyForm = () => ({
+  donor_id: '',
+  blood_group_id: '',
+  donation_date: today(),
+  units_donated: 1,
+  notes: ''
+});
+
 function DonationsPage() {
-  const [donations, setDonations] = useState([]);
-  const [donors, setDonors] = useState([]);
-  const [bloodGroups, setBloodGroups] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const bloodGroups = useBloodGroups();
+  const [donors, setDonors] = useState([]);
+  const { items: donations, loading, reload: fetchDonations } = useFilteredList(
+    '/donations',
+    { search: search.trim(), status: filterStatus },
+    'Could not load donations'
+  );
 
   // Manual record modal
   const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState({
-    donor_id: '',
-    blood_group_id: '',
-    donation_date: today(),
-    units_donated: 1,
-    notes: ''
-  });
+  const [formData, setFormData] = useState(emptyForm);
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -36,52 +42,17 @@ function DonationsPage() {
 
   const { showToast } = useToast();
 
+  const setField = (name) => (e) => setFormData((prev) => ({ ...prev, [name]: e.target.value }));
+
+  // Active donors for the record form
   useEffect(() => {
-    fetchBloodGroups();
-    fetchDonors();
+    api.get('/donors', { params: { status: 'active' } })
+      .then((res) => setDonors(res.data))
+      .catch(() => {});
   }, []);
 
-  useEffect(() => {
-    const timer = setTimeout(() => fetchDonations(), 250);
-    return () => clearTimeout(timer);
-  }, [search, filterStatus]);
-
-  const fetchDonations = async () => {
-    try {
-      const params = {};
-      if (search.trim()) params.search = search.trim();
-      if (filterStatus) params.status = filterStatus;
-      const res = await api.get('/donations', { params });
-      setDonations(res.data);
-    } catch (err) {
-      showToast('Could not load donations', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchDonors = async () => {
-    try {
-      const res = await api.get('/donors', { params: { status: 'active' } });
-      setDonors(res.data);
-    } catch (err) {}
-  };
-
-  const fetchBloodGroups = async () => {
-    try {
-      const res = await api.get('/dashboard/blood-groups');
-      setBloodGroups(res.data);
-    } catch (err) {}
-  };
-
   const openModal = () => {
-    setFormData({
-      donor_id: '',
-      blood_group_id: '',
-      donation_date: today(),
-      units_donated: 1,
-      notes: ''
-    });
+    setFormData(emptyForm());
     setFormError('');
     setShowModal(true);
   };
@@ -171,8 +142,8 @@ function DonationsPage() {
         </button>
       </div>
 
-      <div className="toolbar" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-        <div style={{ flex: 1 }}>
+      <div className="toolbar toolbar-split">
+        <div>
           <SearchInput
             placeholder="Filter by donor name or phone..."
             value={search}
@@ -182,7 +153,6 @@ function DonationsPage() {
         </div>
         <select
           className="form-control"
-          style={{ width: '180px' }}
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
         >
@@ -206,7 +176,6 @@ function DonationsPage() {
               <button
                 type="button"
                 className="btn btn-sm btn-secondary"
-                style={{ marginTop: 10 }}
                 onClick={() => {
                   setSearch('');
                   setFilterStatus('');
@@ -221,7 +190,6 @@ function DonationsPage() {
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
-                style={{ marginTop: 10 }}
                 onClick={openModal}
               >
                 + Record First Donation
@@ -231,7 +199,7 @@ function DonationsPage() {
         </div>
       ) : (
         <div className="card">
-          <div className="card-body" style={{ padding: 0 }}>
+          <div className="card-body">
             <div className="table-container">
               <table>
                 <thead>
@@ -243,7 +211,7 @@ function DonationsPage() {
                     <th>Donation Date</th>
                     <th>Status</th>
                     <th>Notes / Source</th>
-                    <th style={{ textAlign: 'right' }}>Actions</th>
+                    <th className="actions-cell">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -259,12 +227,12 @@ function DonationsPage() {
                           {d.status}
                         </span>
                       </td>
-                      <td style={{ maxWidth: '200px', fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                      <td className="notes-cell">
                         {d.notes || (d.recorded_by ? `Staff: ${d.recorded_by}` : 'Public portal')}
                       </td>
-                      <td style={{ textAlign: 'right' }}>
+                      <td className="actions-cell">
                         {d.status === 'Pending' ? (
-                          <div style={{ display: 'inline-flex', gap: '6px' }}>
+                          <div className="action-btns">
                             <button
                               type="button"
                               className="btn btn-sm btn-primary"
@@ -286,7 +254,7 @@ function DonationsPage() {
                             </button>
                           </div>
                         ) : (
-                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                          <span className="cell-note">
                             {d.status === 'Completed' ? 'Processed' : 'Archived'}
                           </span>
                         )}
@@ -344,7 +312,7 @@ function DonationsPage() {
                     <option key={bg.id} value={bg.id}>{bg.group_name}</option>
                   ))}
                 </select>
-                <small style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block', marginTop: 4 }}>
+                <small className="field-hint locked-hint">
                   Locked to donor's blood type
                 </small>
               </div>
@@ -353,7 +321,7 @@ function DonationsPage() {
                 <select
                   className="form-control"
                   value={formData.units_donated}
-                  onChange={(e) => setFormData({ ...formData, units_donated: parseInt(e.target.value, 10) })}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, units_donated: parseInt(e.target.value, 10) }))}
                 >
                   <option value={1}>1 Unit (Standard 350ml)</option>
                   <option value={2}>2 Units (Double RBC)</option>
@@ -369,7 +337,7 @@ function DonationsPage() {
                 className="form-control"
                 value={formData.donation_date}
                 max={today()}
-                onChange={(e) => setFormData({ ...formData, donation_date: e.target.value })}
+                onChange={setField('donation_date')}
                 required
               />
             </div>
@@ -380,7 +348,7 @@ function DonationsPage() {
                 type="text"
                 className="form-control"
                 value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                onChange={setField('notes')}
                 placeholder="e.g. Hemoglobin 14.0 g/dL, normal phlebotomy"
               />
             </div>
@@ -405,7 +373,7 @@ function DonationsPage() {
       {/* Confirmation Modal to Approve & Complete Pending Donation */}
       {completeTarget && (
         <ConfirmModal
-          isOpen={Boolean(completeTarget)}
+          isOpen
           title="Approve & Complete Blood Donation"
           message={`Verify that blood has been successfully collected from ${completeTarget.donor_name}? This will add ${completeTarget.units_donated} unit(s) of ${completeTarget.blood_group} to blood inventory and update the donor's eligibility record.`}
           confirmText="Confirm & Update Stock"
@@ -419,13 +387,13 @@ function DonationsPage() {
       {/* Modal to Reject Pending Donation */}
       {rejectTarget && (
         <Modal
-          isOpen={Boolean(rejectTarget)}
+          isOpen
           title={`Reject Donation Request - ${rejectTarget.donor_name}`}
-          onClose={() => setRejectTarget(null)}
+          onClose={() => !actionLoading && setRejectTarget(null)}
         >
           <form onSubmit={handleConfirmReject}>
             <div className="modal-body">
-              <p style={{ marginBottom: '14px', fontSize: '13.5px' }}>
+              <p className="modal-intro">
                 Are you sure you want to reject this appointment for <strong>{rejectTarget.donor_name}</strong> ({rejectTarget.blood_group})?
               </p>
               <div className="form-group">

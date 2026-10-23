@@ -1,11 +1,7 @@
 const { pool } = require('../config/db');
 const { localDate, isDateString } = require('../utils/dates');
-
-function stockStatus(units) {
-  if (units === 0) return 'Critical';
-  if (units <= 2) return 'Low Stock';
-  return 'Available';
-}
+const { stockStatus } = require('../utils/stock');
+const { PHONE_RE, URGENCIES, cleanPhone } = require('../utils/validation');
 
 // GET /api/public/overview - Aggregate figures for the public website (no personal data)
 async function getPublicOverview(req, res) {
@@ -76,12 +72,12 @@ async function createPublicBloodRequest(req, res) {
     }
 
     const urgencyValue = urgency || 'Normal';
-    if (!['Normal', 'Urgent', 'Critical'].includes(urgencyValue)) {
+    if (!URGENCIES.includes(urgencyValue)) {
       return res.status(400).json({ message: 'Invalid urgency level.' });
     }
 
-    const cleanPhone = String(phone).replace(/[\s-]/g, '');
-    if (!/^\d{10}$/.test(cleanPhone)) {
+    const contactPhone = cleanPhone(phone);
+    if (!PHONE_RE.test(contactPhone)) {
       return res.status(400).json({ message: 'Phone number must be a valid 10-digit mobile number.' });
     }
 
@@ -104,7 +100,7 @@ async function createPublicBloodRequest(req, res) {
     const [patientResult] = await connection.query(
       `INSERT INTO patients (full_name, age, gender, blood_group_id, hospital, doctor_name, phone)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [patient_name.trim(), ageNum, gender, blood_group_id, hospital.trim(), doctor_name ? doctor_name.trim() : null, cleanPhone]
+      [patient_name.trim(), ageNum, gender, blood_group_id, hospital.trim(), doctor_name ? doctor_name.trim() : null, contactPhone]
     );
 
     const [requestResult] = await connection.query(

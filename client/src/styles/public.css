@@ -1,7 +1,6 @@
 /* User site pages (home, stock, donate, request, track, account). Loaded after index.css. */
 
 .pub-container {
-  width: 100%;
   max-width: 960px;
 }
 
@@ -15,8 +14,7 @@
 
 .pub-muted a,
 .pub-appeal a,
-.pub-auth-switch a,
-.stock-summary a {
+.pub-auth-switch a {
   color: var(--black);
   font-weight: 600;
 }
@@ -25,10 +23,7 @@
   white-space: nowrap;
 }
 
-.pub-lead {
-  color: var(--muted);
-  margin-bottom: 8px;
-}
+/* Page headings */
 
 .pub-stock h1,
 .pub-page-header h1,
@@ -36,18 +31,17 @@
 .pub-auth-header h1,
 .confirmation-header h2 {
   font-size: 20px;
-  font-weight: 700;
   line-height: 1.2;
   margin-bottom: 4px;
 }
 
 .pub-page-header,
-.public-heading-section {
+.public-heading-section,
+.pub-auth-header {
   margin-bottom: 20px;
 }
 
-.pub-page-header p,
-.public-heading-section p {
+.pub-page-header p {
   color: var(--muted);
   max-width: 64ch;
 }
@@ -61,14 +55,12 @@
   margin-top: 20px;
 }
 
+/* BloodTag: one blood group and its units */
 .bt {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   min-width: 0;
-  padding: 0;
-  border: none;
-  background: none;
   text-align: left;
 }
 
@@ -83,16 +75,6 @@
   font-size: 13px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-}
-
-button.bt {
-  cursor: pointer;
-}
-
-.bt-selected .bt-group,
-button.bt:hover .bt-group {
-  text-decoration: underline;
-  text-underline-offset: 5px;
 }
 
 .pub-appeal {
@@ -112,7 +94,6 @@ button.bt:hover .bt-group {
 
 .pub-path h2 {
   font-size: 16px;
-  font-weight: 700;
   margin-bottom: 4px;
 }
 
@@ -124,17 +105,11 @@ button.bt:hover .bt-group {
 
 /* Stock page */
 
-.stock-summary {
-  max-width: 62ch;
-  margin-bottom: 14px;
-}
-
 .stock-row {
   cursor: pointer;
 }
 
 .stock-pick {
-  padding: 0;
   border: none;
   background: none;
   font-weight: 700;
@@ -145,6 +120,7 @@ button.bt:hover .bt-group {
   font-weight: 700;
 }
 
+/* :hover too, to beat the table's row hover */
 .stock-row-selected,
 .stock-row-selected:hover {
   background: var(--black);
@@ -165,7 +141,6 @@ button.bt:hover .bt-group {
 
 .pub-compat-box h2 {
   font-size: 16px;
-  font-weight: 700;
 }
 
 .pub-compat-list {
@@ -182,18 +157,23 @@ button.bt:hover .bt-group {
   font-size: 20px;
 }
 
-/* Track */
+/* Track page, and the receipt on confirmation pages: ruled rows */
 
 .track-section + .track-section {
   margin-top: 24px;
 }
 
-.track-list {
-  list-style: none;
+.track-list,
+.appointment-receipt {
   border-top: 1px solid var(--black);
 }
 
-.track-item {
+.track-list {
+  list-style: none;
+}
+
+.track-item,
+.receipt-row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
@@ -215,6 +195,19 @@ button.bt:hover .bt-group {
 
 .track-donor {
   margin-top: 16px;
+}
+
+.receipt-label {
+  color: var(--muted);
+}
+
+.receipt-val {
+  text-align: right;
+}
+
+.reference-val {
+  font-size: 15px;
+  font-weight: 700;
 }
 
 /* Donate + request forms */
@@ -242,7 +235,6 @@ button.bt:hover .bt-group {
 
 .section-title {
   font-size: 15px;
-  font-weight: 700;
   margin-bottom: 12px;
 }
 
@@ -271,7 +263,7 @@ button.bt:hover .bt-group {
   gap: 12px;
 }
 
-/* Confirmation + track result */
+/* Confirmation pages */
 
 .confirmation-card {
   display: flex;
@@ -292,35 +284,8 @@ button.bt:hover .bt-group {
   max-width: 60ch;
 }
 
-.appointment-receipt {
-  border-top: 1px solid var(--black);
-}
-
-.receipt-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 16px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.receipt-label {
-  color: var(--muted);
-}
-
-.receipt-val {
-  text-align: right;
-}
-
-.reference-val {
-  font-size: 15px;
-  font-weight: 700;
-}
-
 .guidelines-card h3 {
   font-size: 15px;
-  font-weight: 700;
   margin-bottom: 6px;
 }
 
@@ -346,14 +311,6 @@ button.bt:hover .bt-group {
 
 .pub-auth-wide {
   max-width: 500px;
-}
-
-.pub-auth-header {
-  margin-bottom: 20px;
-}
-
-.pub-auth-header p {
-  color: var(--muted);
 }
 
 .pub-auth-card .btn-submit {
@@ -384,7 +341,6 @@ button.bt:hover .bt-group {
 
 .pub-account-profile h3 {
   font-size: 15px;
-  font-weight: 700;
   margin-bottom: 10px;
 }
 
@@ -407,6 +363,16 @@ button.bt:hover .bt-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.pub-account-security {
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.pub-account-security .btn {
+  width: 100%;
 }
 
 @media (max-width: 900px) {
